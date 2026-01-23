@@ -44,12 +44,17 @@ INSTALLED_APPS = [
     #Third party apps
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt',
 
     #Apps (The Domain)
     'user_auth',
     'product',
     'orders',
     'payments',
+
+    
+    
+
 ]
 
 MIDDLEWARE = [
@@ -134,3 +139,26 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'user_auth.User'
+
+# config/settings.py
+
+from datetime import timedelta
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated', # Lock everything down by default
+    ),
+}
+
+# JWT Settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30), # Token expires in 30 mins
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),    # Login lasts for 1 day
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+} 
