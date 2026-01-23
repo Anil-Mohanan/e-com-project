@@ -1,0 +1,13 @@
+# Python junk
+__pycache__/
+*.py[cod]
+venv/
+
+# Environment variables (CRITICAL: Never commit this)
+.env
+
+# Database (if you ever use sqlite locally)
+db.sqlite3
+
+# Media
+media/
