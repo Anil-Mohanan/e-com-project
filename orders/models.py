@@ -1,18 +1,38 @@
 from django.db import models
 from django.conf import settings
 from product.models import Product
+from decimal import Decimal
 
 # Create your models here.
+         
+class ShippingAddress(models.Model):
+       user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='addresses')
+       full_name = models.CharField(max_length=100)# who receives the package?
+       address_line_1 = models.CharField(max_length=255)
+       address_line_2 = models.CharField(max_length=255, blank=True, null= True)
+       city = models.CharField(max_length=100)
+       state = models.CharField(max_length=100)
+       postal_code = models.CharField(max_length=20)
+       country = models.CharField(max_length=100,default='India')
+       phone_number = models.CharField(max_length=15)
+       
+       #Is this the primary address?
+       is_default = models.BooleanField(default=False)
 
+       def __str__(self):
+              return f"{self.full_name} - {self.city}"
+       
 class Order(models.Model):
        ORDER_STATUS = (
               ('Cart', 'Cart'),
               ('Pending', 'Pending'),
               ('Shipped', 'Shipped'),
+              ('Delivered', 'Delivered'),
               ('Cancelled', 'Cancelled'),
        )
 
        user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
+       shipping_address = models.ForeignKey(ShippingAddress,on_delete=models.SET_NULL, null=True, blank=True)#deleting an address from your profile, we don't want to delete all the historical orders sent to that address. We just keep the order but say "Address was deleted".
        status = models.CharField(max_length=20, choices=ORDER_STATUS, default='Cart')
        created_at = models.DateTimeField(auto_now_add=True)
        updated_at = models.DateTimeField(auto_now=True)
@@ -20,8 +40,22 @@ class Order(models.Model):
        def __str__(self):
               return f"Orders {self.id} - {self.user.email} ({self.status})"
        @property
-       def total_price(self):
-              return sum(item.total_price for item in self.items.all())# Calculate total automatically from items
+       def subtotal(self):#price of items only
+              return sum(item.total_price for item in self.items.all())
+       @property
+       def tax_amount(self):#tax calculation
+              return self.subtotal * Decimal('0.18')
+       @property
+       def shipping_fee(self):#shipping fee over 1500
+              if self.subtotal > 1500:
+                     return 0
+              else: 
+                     return 100
+       @property
+       def total_price(self):#Grand tootal (Subtotal + Tax + Shipping)
+              return self.subtotal + self.tax_amount + self.shipping_fee
+       
+
 class OrderItem(models.Model):
        order = models.ForeignKey(Order,on_delete=models.CASCADE, related_name='items')
        product = models.ForeignKey(Product,on_delete=models.CASCADE)
@@ -39,4 +73,3 @@ class OrderItem(models.Model):
        
        def __str__(self):
               return f"{self.quantity} x {self.product.name}"
-              
