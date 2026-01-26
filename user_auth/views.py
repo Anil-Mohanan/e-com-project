@@ -1,6 +1,6 @@
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .serializers import UserRegistrationSerializer
+from .serializers import UserRegistrationSerializer, UserSerializer
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -28,4 +28,19 @@ class LogoutView(APIView):
                      return Response({"message" : "Successfully logged Out"}, status=status.HTTP_205_RESET_CONTENT)
               except Exception as e:
                      return Response({"error": "Invalid token"},status=status.HTTP_400_BAD_REQUEST)
-                     
+class UserProfileView(generics.RetrieveUpdateAPIView):
+       queryset = User.objects.all()
+       serializer_class = UserSerializer
+       permission_classes = [IsAuthenticated]
+
+       def get_object(self):
+              return self.request.user
+       
+class DeleteAccountView(APIView):
+       permission_classes = [IsAuthenticated]
+
+       def delete(self, request):
+              user = request.user
+              user.delete()
+              return Response({"message": "Account deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+              
