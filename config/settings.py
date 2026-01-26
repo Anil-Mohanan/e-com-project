@@ -45,12 +45,15 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'rest_framework_simplejwt',
+    'django_rest_passwordreset',
+    'rest_framework_simplejwt.token_blacklist',
 
     #Apps (The Domain)
     'user_auth',
     'product',
     'orders',
     'payments',
+    
 
     
     
@@ -166,3 +169,5 @@ SIMPLE_JWT = {
 #Media Files (user uploads like Product Images)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
