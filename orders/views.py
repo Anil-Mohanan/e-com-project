@@ -2,6 +2,7 @@ from django.shortcuts import render
 from rest_framework import viewsets , permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from django.db import transaction
 from .models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
 # Create your views here.
@@ -66,25 +67,43 @@ class OrderViewSet(viewsets.ModelViewSet):
               
               serializer = self.get_serializer(order)# in this line what is get_serializer and what is order 
               return Response(serializer.data)
+       
        @action(detail=False, methods=['post'])
        def checkout(self,request):
+              serializer = self.get_serializer(data = request.data)
+              serializer.is_valid(raise_exception = True)
+
               address_id = request.data.get('address_id')
-              
+
               try:
-                     order = Order.objects.get(user=request.user,status = 'Cart')
+                     with transaction.atomic():
+                            order = Order.objects.get(user=request.user, status = 'Cart')
+
+                            address = ShippingAddress.objects.get(id = address_id, user = request.user)
+
+                            items = order.items.select_related('product')#It allows you to walk backwards from the Parent (Order) to the Children (OrderItems), even though the Parent doesn't actually store the Children's IDs.
+                            
+                            for item in items:
+                                   product = item.product
+                                   
+                                   if product.stock < item.quantity:
+                                          raise ValueError(f"Sorry,{product.name} is out of stock (Only {product.stock} left).")
+                                   product.stock -= item.quantity
+                                   product.save()
+                            order.shipping_address = address
+                            order.status = 'Pending'
+                            order.save()
+                            
+                            return Response(self.get_serializer(order).data)
               except Order.DoesNotExist:
                      return Response({'error': 'Cart is empty'}, status=status.HTTP_404_NOT_FOUND)
-              
-              try:
-                     address = ShippingAddress.objects.get(id=address_id, user=request.user)
               except ShippingAddress.DoesNotExist:
                      return Response({'error': 'Invalid Address ID'}, status=status.HTTP_404_NOT_FOUND)
-              order.shipping_address = address
-              order.status = 'Pending'
-              order.save()
+              except ValueError as e:
+                     return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
               
-              serializer = self.get_serializer(order)
-              return Response(serializer.data)
+                     
+              
               
 class ShippingAddressViewSet(viewsets.ModelViewSet):
        serializer_class = ShippingAddressSerializer
