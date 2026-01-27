@@ -28,7 +28,7 @@ class CustomUserManager(BaseUserManager):
 class User(AbstractUser):
        username = models.CharField(max_length=150, unique=True , null=True, blank=True)
        email = models.EmailField(unique=True)
-
+       is_email_verified = models.BooleanField(default=False)
        is_customer = models.BooleanField(default=True)
        is_seller = models.BooleanField(default=False)
        

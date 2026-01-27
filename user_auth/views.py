@@ -6,6 +6,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes , force_str
+from django.core.mail import send_mail
+from django.urls import reverse
 
 
 User = get_user_model()
@@ -28,6 +33,7 @@ class LogoutView(APIView):
                      return Response({"message" : "Successfully logged Out"}, status=status.HTTP_205_RESET_CONTENT)
               except Exception as e:
                      return Response({"error": "Invalid token"},status=status.HTTP_400_BAD_REQUEST)
+              
 class UserProfileView(generics.RetrieveUpdateAPIView):
        queryset = User.objects.all()
        serializer_class = UserSerializer
@@ -43,4 +49,18 @@ class DeleteAccountView(APIView):
               user = request.user
               user.delete()
               return Response({"message": "Account deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+class VerifyEmailView(APIView):
+       def get(self,request,uidb64,token):
+              try:
+                     uid = force_str(urlsafe_base64_decode(uidb64))
+                     user = User.objects.get(pk=uid)
+              except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+                     user = None
+              
+              if user is not None and default_token_generator.check_token(user,token):
+                     user.is_email_verified = True
+                     user.save()
+                     return Response({"message": "Email verified Successfully!"}, status=status.HTTP_200_OK)
+              else:
+                     return Response({"error": "Invalid Link"}, status=status.HTTP_400_BAD_REQUEST)
               

@@ -1,5 +1,5 @@
 from django.urls import path,include
-from .views import RegisterView,LogoutView,UserProfileView,DeleteAccountView
+from .views import RegisterView,LogoutView,UserProfileView,DeleteAccountView,VerifyEmailView
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name= 'register'),
@@ -7,4 +7,5 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(), name='logout'),
     path('profile/',UserProfileView.as_view(),name = 'profile'),
     path('delete/', DeleteAccountView.as_view(), name = 'delete_account'),
+    path('verify-email/<uidb64>/<token>/',VerifyEmailView.as_view(),name='verify_email'),
 ]
