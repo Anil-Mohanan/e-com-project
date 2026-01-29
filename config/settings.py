@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     
     #Third party apps
     'rest_framework',
+    'django_filters',
     'corsheaders',
     'rest_framework_simplejwt',
     'django_rest_passwordreset',
@@ -151,14 +152,16 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated', # Lock everything down by default
+    # ADD THESE LINES FOR PAGINATION AND FILTERING:
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 12, # 12 is a good number (divisible by 2, 3, 4 for grid layouts)
 }
-
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30), # Token expires in 30 mins
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1), # Token expires in 30 mins
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),    # Login lasts for 1 day
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',

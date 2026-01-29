@@ -3,22 +3,37 @@ from .models import Order , OrderItem, ShippingAddress
 
 class OrderItemSerializer(serializers.ModelSerializer):
        product_name = serializers.CharField(source = 'product.name', read_only = True)
-       product_image = serializers.CharField(source = 'product.image.first.image.url',read_only = True)
+       #Use a MethodFeild to Safely get the image without Crasing
+       product_image = serializers.SerializerMethodField()
+       product_slug = serializers.ReadOnlyField(source = 'product.slug')
 
        class Meta:
               model = OrderItem
-              fields = ['product_name','product_image','quantity','price_at_purchase']
+              fields = ['product_name','product_image','quantity','product_slug','price_at_purchase']
+       def get_product_image(self,obj):
+              # 1 Grab all images for the product
+              #Note : 'images' is the related_name we typically assume.
+              # if product model dind't set related_name = 'images', use 'productimage_set'
+
+              images = obj.product.images.all()
+              
+              #2. check if any exist
+              if images.exists():
+                     # 3. Return the URL of the first one
+                     return images.first().image.url
+              return None
 
 class OrderSerializer(serializers.ModelSerializer):
        #nesting the OrderItem Serializer
        items = OrderItemSerializer(many = True, read_only = True)
        tax_amount = serializers.ReadOnlyField()
        shipping_fee = serializers.ReadOnlyField()
+       subtotal = serializers.ReadOnlyField()
        total_price = serializers.ReadOnlyField() # this grabs the @property from the model
        
        class Meta:
               model = Order
-              fields = ['id','user','status','created_at', 'items','subtotal','tax_amount','shipping_fee','total_price']
+              fields = ['order_id','user','status','created_at', 'items','subtotal','tax_amount','shipping_fee','total_price']
 
 class ShippingAddressSerializer(serializers.ModelSerializer):
        class Meta:
