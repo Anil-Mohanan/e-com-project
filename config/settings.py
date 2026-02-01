@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv 
+import environ
+
 
 load_dotenv() 
 
@@ -174,3 +176,14 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# PAYMENTS CONFIGURATION
+
+env = environ.Env() 
+
+environ.Env.read_env(os.path.join(BASE_DIR,'.env'))
+
+# Stripe (Get these from dashboard.stripe.com)
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")

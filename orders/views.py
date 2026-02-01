@@ -42,6 +42,8 @@ class OrderViewSet(viewsets.ModelViewSet):
               else:
                      item.quantity = quantity
               item.save()
+              
+              order.save()
 
               serializer = self.get_serializer(order)
               return Response(serializer.data)
@@ -62,6 +64,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               else:
                      item.quantity = quantity
                      item.save()
+              order.save()
               serializer = self.get_serializer(order)
               return Response(serializer.data)
               
@@ -73,6 +76,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      order = Order.objects.get(user=request.user, status='Cart')
                      item = OrderItem.objects.get(order=order, product_id= product_id)
                      item.delete()
+                     order.save()
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
                      return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
               

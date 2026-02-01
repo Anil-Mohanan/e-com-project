@@ -50,6 +50,8 @@ class Order(models.Model):
               return self.subtotal * Decimal('0.18')
        @property
        def shipping_fee(self):#shipping fee over 1500
+              if self.subtotal == 0: # if the cart is empty (0) , shipping is 0
+                     return 0
               if self.subtotal > 1500:
                      return 0
               else: 
