@@ -9,6 +9,8 @@ from django.views.decorators.csrf import csrf_exempt # To disable seccurity ceck
 from django.utils.decorators import method_decorator # To apply the csrf_exempt decoratero to a class view
 from orders.models import Order
 from .models import Payment
+from orders.emails import send_payment_success_email
+from datetime import datetime
 
 stripe.api_key = settings.STRIPE_SECRET_KEY# verfining the Stripe keys 
 
@@ -132,10 +134,18 @@ class StripeWebhookView(APIView):
                      #Step A2 Mark order As pending
                      order = Order.objects.get(order_id = order_id)
                      order.status = 'Pending'
+                     order.is_paid = True
+                     order.paid_at = datetime.now()
                      order.save()
                      
-                     print(f"✅ WEBOOK: Payment Success for Order {order_id}")
-              #Case B: Payment Failed (Card Declined , Insufficient funds)
+                     try:
+                           print(f"📧 Sending Payment Eamil for Order{order_id}...")
+                           send_payment_success_email(order) # the connection
+                     except Exception as e:
+                           print(f"❌ Email Faild : {e}")
+                           
+                     print(f"✅ WEBHOOK: Payment Success for Order {order_id}")
+                           #Case B: Payment Failed (Card Declined , Insufficient funds)
               elif event['type'] == 'payment_intent.payment_failed':
                      intent = event['data']['object']
                      transaction_id = intent['id']

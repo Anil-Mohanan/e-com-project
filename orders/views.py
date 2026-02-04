@@ -5,6 +5,8 @@ from rest_framework.decorators import action
 from django.db import transaction
 from .models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
+from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
+from datetime import datetime
 # Create your views here.
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -113,7 +115,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                             order.shipping_address = address
                             order.status = 'Pending'
                             order.save()
-                            
+                            try:
+                                   send_order_confirmation_email(order)
+                            except Exception as e:
+                                   print(F"Email Failed:{e}")
+
                             return Response(self.get_serializer(order).data)
               except Order.DoesNotExist:
                      return Response({'error': 'Cart is empty'}, status=status.HTTP_404_NOT_FOUND)
@@ -133,7 +139,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               serializer = self.get_serializer(order)
               return Response(serializer.data)
        @action(detail=True, methods=['patch'])
-       def update_status(self,request,pk=None):
+       def update_status(self,request,order_id = None):
               """only Admin Can change the order status(e.g, Pending, shipped)"""
               
               #Security Check: Are you Admin
@@ -147,9 +153,16 @@ class OrderViewSet(viewsets.ModelViewSet):
               
               order.status = new_status
               order.save()
+              
+              if new_status == "Shipped":
+                     try:
+                            send_shipping_email(order)
+                     except Exception as e:
+                            print(f"Shipping email failed:{e}")
+              
               return Response({'status': 'Order updated', 'current_status':order.status})
        @action(detail=True, methods=['post'])
-       def cancel_order(self,request,pk=None):
+       def cancel_order(self,request,order_id = None):
               """Allow user to Cancel their OWN order.
               critical: This must restore the stock on the products!"""
 
@@ -171,10 +184,37 @@ class OrderViewSet(viewsets.ModelViewSet):
                                    product.save()
                             order.status = 'Cancelled'
                             order.save()
-                            
+                            try:
+                                   send_cancellation_email(order)
+                            except Exception as e:
+                                   print(f"Cancellation email Failed: {e}")              
                             return Response({'status': 'Order cancelled Successfully','new_status': 'Cancelled'})
               except Exception as e:
                      return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+       @action(detail=True, methods=['patch'])
+       def mark_as_paid(self,request, order_id =None):
+              """Manal Pay by the Admin to Mark an order is paid Use full of COD"""
+              
+              if not request.user.is_staff:
+                     return Response({'error': 'Admins Only'}, status=status.HTTP_400_BAD_REQUEST)
+
+              order = self.get_object()
+              
+              #check if already paid
+              if order.is_paid:
+                     return Response({'message': 'order is already paid'})
+
+              order.is_paid= True
+              order.paid_at = datetime.now()
+              
+              #Trigger Eamil: Payment Success
+              try:
+                     send_payment_success_email(order)
+              except Exception as e:
+                     print(F"Payment email Failed:{e}")
+              return Response({'status': 'Payment confirmed','isPaid': True})
+
+
                                           
        
 class ShippingAddressViewSet(viewsets.ModelViewSet):

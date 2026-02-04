@@ -41,6 +41,8 @@ class Order(models.Model):
        updated_at = models.DateTimeField(auto_now=True)
        order_id = models.UUIDField(default=uuid.uuid4,editable=False, unique=True)
        total_price = models.DecimalField(max_digits=10,decimal_places=2, default=0.00)
+       is_paid = models.BooleanField(default=False)
+       paid_at = models.DateTimeField(auto_now_add=False , null = True, blank=True)
 
        def calculate_total(self):#Grand tootal (Subtotal + Tax + Shipping)
               return self.subtotal + self.tax_amount + self.shipping_fee
