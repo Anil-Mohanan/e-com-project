@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils.text import slugify
+from user_auth.models import User
 
 #Category model
 
@@ -58,7 +59,18 @@ class ProductVariant(models.Model):
 
        def __str__(self):
               return f"{self.product.name} - {self.size}/{self.color}"
+
+class Review(models.Model):
+       product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name= 'reviews')              
+       user = models.ForeignKey(User, on_delete=models.CASCADE)
+       rating = models.IntegerField(default=0)
+       comment = models.TextField(default="",blank=True, null=True)
+       created_at  = models.DateTimeField(auto_now_add=True)
+
+       def __str__(self):
+              return f"{self.user.first_name} - {self.product.name} ({self.rating} Stars)"
               
+
 
 
 

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Order , OrderItem, ShippingAddress
+from datetime import timedelta
 
 class OrderItemSerializer(serializers.ModelSerializer):
        product_name = serializers.CharField(source = 'product.name', read_only = True)
@@ -30,10 +31,15 @@ class OrderSerializer(serializers.ModelSerializer):
        shipping_fee = serializers.ReadOnlyField()
        subtotal = serializers.ReadOnlyField()
        total_price = serializers.ReadOnlyField() # this grabs the @property from the model
+       estimated_delivery = serializers.SerializerMethodField()
+
        
        class Meta:
               model = Order
-              fields = ['order_id','user','status','created_at', 'items','subtotal','tax_amount','shipping_fee','total_price']
+              fields = ['order_id','user','status','created_at', 'items','subtotal','tax_amount','shipping_fee','total_price','estimated_delivery']
+       def get_estimated_delivery(self,obj):
+              delivery_date = obj.created_at + timedelta(days=5)
+              return delivery_date.date()
 
 class ShippingAddressSerializer(serializers.ModelSerializer):
        class Meta:

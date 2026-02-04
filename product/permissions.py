@@ -17,5 +17,19 @@ class IsSellerOrAdmin(permissions.BasePermission):
                      return True
               
               return getattr(request.user, 'is_seller',False)
+       
+class IsReviewAuthorOrReadOnly(permissions.BasePermission):
+       """Object-level permission to only allow owners of a review to edit/delete it."""
+       def has_object_permission(self, request, view, obj):
+              # Read permissions are allowed to any request, 
+              # always allow GET, HEAD OR OPTION requests.
+              if request.method in permissions.SAFE_METHODS:
+                     return True
               
+              return obj.user == request.user or request.user.is_staff
+              #Write permissions (PUT, PATCH, DELETE) are only allow to:
+              #the author or the revewi(obj.user == request.user)
+              #or an Admin (request.user.is_staff)
+              
+                     
               

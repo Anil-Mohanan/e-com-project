@@ -1,10 +1,13 @@
 from django.shortcuts import render
-from rest_framework import viewsets, permissions, parsers,filters
-from .models import Product , Category, ProductVariant
-from .serializers import ProductSerializer, CategroySerializer, ProductVarinatSerializer
-from .permissions import IsSellerOrAdmin
+from rest_framework import viewsets, permissions, parsers,filters,status
+from rest_framework.response import Response
+from .models import Product , Category, ProductVariant, Review
+from .serializers import ProductSerializer, CategroySerializer, ProductVarinatSerializer, ReviewSerializer
+from .permissions import IsSellerOrAdmin, IsReviewAuthorOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
+from orders.models import Order, OrderItem 
+from rest_framework.decorators import action
 
 class ProductFilter(django_filters.FilterSet):
        
@@ -30,7 +33,7 @@ class ProductViewSet(viewsets.ModelViewSet):
       
       lookup_field = 'slug' # instead of looking up by ID (products/1), we look up by slug (products/nike-air-max
       
-      parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+      parser_classes = [parsers.MultiPartParser, parsers.FormParser,parsers.JSONParser]
        #get_permissions: Instead of setting one rule for everything ,we check *what* the user is trying to do.
       filter_backends = [DjangoFilterBackend,filters.SearchFilter,filters.OrderingFilter] 
       
@@ -45,11 +48,44 @@ class ProductViewSet(viewsets.ModelViewSet):
        
        
       def get_permissions(self):
+             if self.action == 'add_reveiw':
+                    return [permissions.IsAuthenticated]
+             
              if self.request.method in permissions.SAFE_METHODS:
                      return [permissions.AllowAny()] # if they just want to READ (GET), let anyone in
              else:
                     return [IsSellerOrAdmin()] # if they want to write (POST,PUT, DELETE) chekc if they are a Seller
-       
+      @action(detail=True, methods=['post'],permission_classes = [permissions.IsAuthenticated])  # set detail True for to foucse on one speicifc item . write permission_classes inside action to over ride the defualt IsAuthenticated . Reviwes return by Customers not Sellers
+      def add_review(self,request,slug=None):
+             product = self.get_object() # get the product based on the slug in URL
+             user = request.user
+             data = request.data
+             
+             #check if the user already reviewd
+             if product.reviews.filter(user=user).exists():
+                    return Response(
+                           {'error': 'You have already reviewd this product'},
+                           status= status.HTTP_400_BAD_REQUEST
+                    )
+                    # 2 verfication : did the buy it?
+                    # checking if and orders exist in that is delvered (or any stauts for now)
+                    had_bought = OrderItem.objects.filter(
+                           order__user = user,
+                           product = product
+                    ).exists()
+                    if not had_bought:
+                           return Response(
+                                  {'error': 'You can only reiview products you have purchased.'},
+                                  status=status.HTTP_403_FORBIDDEN
+                           )
+             Review.objects.create(
+                     product = product,
+                     user = user,
+                     rating= data.get('rating',0),
+                     comment = data.get('comment','')
+              )                    
+             return Response({'Message': 'Reivew added Succesfully'}, status=status.HTTP_201_CREATED)
+          
 class CategoryViewSet(viewsets.ModelViewSet):
        
        """Viewset for Categories.
@@ -80,3 +116,26 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
               if product_id:
                      return self.queryset.filter(product_id=product_id)
               return self.queryset
+
+class ReveiwViewSet(viewsets.ModelViewSet):
+       """Handles:
+       -get (list/retrive)
+       put/delete (update- restricted to author)
+       delete(restricted to author/admin)"""
+
+       queryset = Review.objects.all()
+       serializer_class = ReviewSerializer
+       permission_classes = [IsReviewAuthorOrReadOnly] # the Custom permission
+       
+       def get_queryset(self):
+              # if the use ask for specific reveiw
+              if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:# 
+                     return Review.objects.all()
+              #if the user ask for all the review . check is the admin or not 
+              if self.request.user.is_staff:
+                     return Review.objects.all()
+              return Review.objects.none()
+       
+       http_method_names = ['get', 'put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive 
+       
+       
