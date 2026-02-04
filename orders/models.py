@@ -3,6 +3,8 @@ from django.conf import settings
 from product.models import Product
 from decimal import Decimal
 import uuid
+from django.dispatch import receiver
+from django.db.models.signals import post_delete, post_save
 
 # Create your models here.
          
@@ -38,7 +40,10 @@ class Order(models.Model):
        created_at = models.DateTimeField(auto_now_add=True)
        updated_at = models.DateTimeField(auto_now=True)
        order_id = models.UUIDField(default=uuid.uuid4,editable=False, unique=True)
+       total_price = models.DecimalField(max_digits=10,decimal_places=2, default=0.00)
 
+       def calculate_total(self):#Grand tootal (Subtotal + Tax + Shipping)
+              return self.subtotal + self.tax_amount + self.shipping_fee
 
        def __str__(self):
               return f"Orders {self.order_id} - {self.user.email} ({self.status})"
@@ -56,9 +61,17 @@ class Order(models.Model):
                      return 0
               else: 
                      return 100
-       @property
-       def total_price(self):#Grand tootal (Subtotal + Tax + Shipping)
-              return self.subtotal + self.tax_amount + self.shipping_fee
+       def save(self,*args,**kwargs):
+              # calling the parent to carete the row in the DB (We need an ID!)
+
+              super().save(*args,**kwargs)
+              #
+              new_total = self.calculate_total()
+              
+              if self.total_price != new_total:
+                     self.total_price = new_total
+                     super().save(update_fields=['total_price'])
+
        
 
 class OrderItem(models.Model):
@@ -80,3 +93,12 @@ class OrderItem(models.Model):
         if self.price_at_purchase:
             return self.price_at_purchase * self.quantity
         return self.product.price * self.quantity 
+@receiver(post_save, sender=  OrderItem)
+@receiver(post_delete, sender=OrderItem)
+def update_order_total(sender,instance, **kwargs):
+       """
+    When an Item is added/modified/deleted, tell the Parent Order to re-save.
+    Re-saving triggers the 'save()' method above, which updates the price.
+    """
+       instance.order.save()
+    
