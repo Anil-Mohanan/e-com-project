@@ -1,13 +1,16 @@
 from django.db import models
 from django.utils.text import slugify
 from user_auth.models import User
-
+from django.core.validators import FileExtensionValidator
+from PIL import Image
+import io
+from django.core.files.base import ContentFile
 #Category model
 
 class Category(models.Model):
        name = models.CharField(max_length=100)
        slug = models.SlugField(unique=True, blank=True)# 
-       image = models.ImageField(upload_to='category_images/',blank=True, null= True)
+       image = models.ImageField(upload_to='category_images/',blank=True, null= True, validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
 
        class Meta:
               verbose_name_plural = "Categories"
@@ -41,9 +44,23 @@ class Product(models.Model):
 #Product Images (One Product -> Many Images)
 class ProductImages(models.Model):
        product = models.ForeignKey(Product, related_name='images',on_delete=models.CASCADE)
-       image = models.ImageField(upload_to='product_images/')
+       image = models.ImageField(upload_to='product_images/',validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
        is_thumbnail = models.BooleanField(default=False)# Which image show on the list page ?
-       
+       def save(self,*args, **kwargs):
+              super().save(*args, **kwargs)
+              img = Image.open(self.image.path)# Opening the Image using Pillow
+              img = img.convert('RGB') # Converting to RGB (Crusial for JPEG/Webp compatibilty)
+
+              if img.width > 800 or img.height > 800:
+                     img.thumbnail((800,800))
+              output = io.BytesIO() # Save to a Memory buffer
+              img.save(output,format='JPEG',quality = 70)
+              output.seek(0)
+              self.image.save(
+                     self.image.name,
+                     ContentFile(output.read()),
+                     save= False
+              )
        def __str__(self):
               return f"Image for {self.product.name}"
 class ProductVariant(models.Model):

@@ -160,6 +160,15 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12, # 12 is a good number (divisible by 2, 3, 4 for grid layouts)
+    # --- ADD THIS BLOCK ---
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle', # For strangers (Login/Register)
+        'rest_framework.throttling.UserRateThrottle', # For logged-in users
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '5/minute',   # 5 requests per minute for strangers (Strict!)
+        'user': '1000/day',   # 1000 requests per day for members
+    }
 }
 # JWT Settings
 SIMPLE_JWT = {
@@ -187,3 +196,19 @@ environ.Env.read_env(os.path.join(BASE_DIR,'.env'))
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}

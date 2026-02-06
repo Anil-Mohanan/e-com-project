@@ -18,10 +18,11 @@ class OrderViewSet(viewsets.ModelViewSet):
               """Custom Login:
               -Admin: sees all the orders(the Dashboard)
               -Customer : sees only their own orders(Order History)."""
+              queryset = Order.objects.select_related('user').prefetch_related('items__product__images')
               user = self.request.user
               if user.is_staff:# checks if the user is Admin / Staff
-                     return Order.objects.all().order_by('-created_at')
-              return Order.objects.filter(user=user).order_by('-created_at') # ensuring that the loged in user only sees only his orders
+                     return queryset.order_by('-created_at')
+              return queryset.filter(user= user).order_by('-created_at') # ensuring that the loged in user only sees only his orders
 
                      
        @action(detail=False,methods =['post'])

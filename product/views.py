@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from orders.models import Order, OrderItem 
 from rest_framework.decorators import action
+from django.db.models import Avg, Count
 
 class ProductFilter(django_filters.FilterSet):
        
@@ -28,7 +29,7 @@ class ProductViewSet(viewsets.ModelViewSet):
       
 
 
-      queryset = Product.objects.all()
+      queryset = Product.objects.select_related('category').prefetch_related('variants','images').annotate(average_rating = Avg('reviews__rating'),review_count = Count('reviews'))
       serializer_class = ProductSerializer
       
       lookup_field = 'slug' # instead of looking up by ID (products/1), we look up by slug (products/nike-air-max

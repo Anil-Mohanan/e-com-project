@@ -30,7 +30,7 @@ class ProductSerializer(serializers.ModelSerializer):
        images = ProdcutImageSerializer(many = True, read_only = True)
        variants = ProductVarinatSerializer(many=True, read_only = True)
        #Write Only: Fields to accept input when creating a product
-       reviews = ReviewSerializer(many=True,read_only=True)
+       # reviews = ReviewSerializer(many=True,read_only=True)
        average_rating = serializers.SerializerMethodField()
        review_count = serializers.SerializerMethodField()
        category_id = serializers.PrimaryKeyRelatedField(
@@ -55,7 +55,6 @@ class ProductSerializer(serializers.ModelSerializer):
                      'images',
                      'uploaded_images', # Read vs Write
                      'variants',
-                     'reviews',
                      'average_rating',
                      'review_count'
               ]
@@ -72,11 +71,7 @@ class ProductSerializer(serializers.ModelSerializer):
                      ProductImages.objects.create(product=product,image=image)
               return product
        def get_average_rating(self,obj):
-              #Calculate the average sum of of stars/ number of reviews
-              reviews = obj.reviews.all()# explain this line 
-              if reviews.exists():
-                     return round(sum([r.rating for r in reviews])/ reviews.count(),1) # Question: what is the caculation method in here
-              return 0
+             return getattr(obj,'average_rating',0)or 0
        def get_review_count(self,obj):# Question : what is method is for
-              return obj.reviews.count()
+              return getattr(obj, 'review_count',0)
        

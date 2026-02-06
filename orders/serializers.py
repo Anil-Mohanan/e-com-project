@@ -19,9 +19,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
               images = obj.product.images.all()
               
               #2. check if any exist
-              if images.exists():
+              if images:
                      # 3. Return the URL of the first one
-                     return images.first().image.url
+                     return images[0].image.url
               return None
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -40,7 +40,6 @@ class OrderSerializer(serializers.ModelSerializer):
        def get_estimated_delivery(self,obj):
               delivery_date = obj.created_at + timedelta(days=5)
               return delivery_date.date()
-
 class ShippingAddressSerializer(serializers.ModelSerializer):
        class Meta:
               model = ShippingAddress
