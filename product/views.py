@@ -9,6 +9,7 @@ import django_filters
 from orders.models import Order, OrderItem 
 from rest_framework.decorators import action
 from django.db.models import Avg, Count
+from django.core.cache import cache
 
 class ProductFilter(django_filters.FilterSet):
        
@@ -45,6 +46,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
       ordering_fields = ['price', 'created_at']
       ordering = ['-created_at'] # Default sort: Newest first
+      
       
        
        
@@ -86,6 +88,18 @@ class ProductViewSet(viewsets.ModelViewSet):
                      comment = data.get('comment','')
               )                    
              return Response({'Message': 'Reivew added Succesfully'}, status=status.HTTP_201_CREATED)
+      
+      def list(self,request,*args, **kwargs):
+              cache_key = f"product_list{request.query_params.urlencode()}"
+              
+              stored_data = cache.get(cache_key)
+              if stored_data:
+                     return Response(stored_data)
+              response = super().list(request,*args, **kwargs)
+              cache.set(cache_key,response.data,900)
+              return response
+
+             
           
 class CategoryViewSet(viewsets.ModelViewSet):
        
@@ -101,6 +115,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
                      return [permissions.AllowAny()]
               else:
                      return [IsSellerOrAdmin()]
+       def list(self,request,*args, **kwargs):
+              cache_key = "category_list_all"
+
+              stored_data = cache.get(cache_key)
+              if stored_data:
+                     return Response(stored_data)
+              response = super().list(request,*args, **kwargs)
+              cache.set(cache_key,response.data,900)
+              return response
+
 
 class ProductVariantViewSet(viewsets.ModelViewSet):
        """Manage Vairants (Size/color) for Products Admin create the Main product first , then add the varians here"""
@@ -117,6 +141,18 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
               if product_id:
                      return self.queryset.filter(product_id=product_id)
               return self.queryset
+       def list(self, request,*args, **kwargs):
+              product_id = request.query_params.get('product_id')
+              params = request.query_params.urlencode()
+              cache_key = f"product_variants_{params}"
+              if product_id:
+                     stored_data = cache.get(cache_key)
+              if stored_data:
+                     return Response(stored_data)
+              if product_id:
+                     response = super().list(request,*args, **kwargs)
+                     cache.set(cache_key,response.data,900)
+                     return response
 
 class ReveiwViewSet(viewsets.ModelViewSet):
        """Handles:
@@ -127,16 +163,35 @@ class ReveiwViewSet(viewsets.ModelViewSet):
        queryset = Review.objects.all()
        serializer_class = ReviewSerializer
        permission_classes = [IsReviewAuthorOrReadOnly] # the Custom permission
+      
+
        
        def get_queryset(self):
               # if the use ask for specific reveiw
               if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:# 
-                     return Review.objects.all()
+                     return Review.objects.all().order_by('-created_at')
               #if the user ask for all the review . check is the admin or not 
               if self.request.user.is_staff:
-                     return Review.objects.all()
+                     return Review.objects.all().order_by('-created_at')
               return Review.objects.none()
        
        http_method_names = ['get', 'put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive 
        
+       def list(self,request,*args, **kwargs):
+              product_id = request.query_params.get('product_id')
+              if product_id:
+                     params = request.query_params.urlencode()
+                     cache_key = f"reviews_product_{params}"
+              else:
+                     cache_key = "review_list_all"
+              
+              stored_data = cache.get(cache_key)
+              if stored_data:
+                     return Response(stored_data)
+              
+              response = super().list(request,*args, **kwargs)
+              cache.set(cache_key,response.data,900)
+              return response
+       
+
        

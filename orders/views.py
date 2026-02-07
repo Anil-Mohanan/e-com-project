@@ -7,7 +7,7 @@ from .models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
 from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
 from datetime import datetime
-# Create your views here.
+from django.core.cache import cache
 
 class OrderViewSet(viewsets.ModelViewSet):
        serializer_class = OrderSerializer
@@ -49,6 +49,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               order.save()
 
               serializer = self.get_serializer(order)
+              cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
        
        @action (detail=False,methods=['post'])#Update the Quantity (Set to Specific number)
@@ -69,6 +70,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      item.save()
               order.save()
               serializer = self.get_serializer(order)
+              cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
               
               # Remove Item (Delete Completely )
@@ -84,6 +86,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
               
               serializer = self.get_serializer(order)# in this line what is get_serializer and what is order 
+              cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
        
        @action(detail=False, methods=['post'])
@@ -132,12 +135,17 @@ class OrderViewSet(viewsets.ModelViewSet):
        def cart(self,request):
               """Fethc the current user's active cart.
               if it doesn't exist, create a new one."""
-
+              cache_key = f"user_cart_{request.user.id}"
+              stored_data = cache.get(cache_key)
+              if stored_data:
+                     return Response(stored_data)
+              
               order, created = Order.objects.get_or_create(
                      user= request.user,
                      status = 'Cart'
               )
               serializer = self.get_serializer(order)
+              cache.set(cache_key,serializer.data,60)
               return Response(serializer.data)
        @action(detail=True, methods=['patch'])
        def update_status(self,request,order_id = None):
@@ -214,9 +222,20 @@ class OrderViewSet(viewsets.ModelViewSet):
               except Exception as e:
                      print(F"Payment email Failed:{e}")
               return Response({'status': 'Payment confirmed','isPaid': True})
+       
+       
+       
+       def list(self,request,*args, **kwargs):
+              user_id = request.user.id
+              cache_key = f"user_{user_id}_orders_{request.query_params.urlencode()}"
+              stored_data = cache.get(cache_key)
+              print(cache_key)
+              if stored_data:
+                     return Response(stored_data)
 
-
-                                          
+              response = super().list(request,*args, **kwargs)
+              cache.set(cache_key,response.data,300)
+              return response                    
        
 class ShippingAddressViewSet(viewsets.ModelViewSet):
        serializer_class = ShippingAddressSerializer
