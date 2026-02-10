@@ -8,3 +8,5 @@ urlpatterns = [
        path('users/',UserListView.as_view(), name='user-list'),
        path('low-stock/',LowStockProductView.as_view(),name='low-stock'),
 ]
+handler404 = 'cofig.error_views.error_404'
+handler500 = 'cofig.error_views.error_500'

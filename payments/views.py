@@ -11,8 +11,12 @@ from orders.models import Order
 from .models import Payment
 from orders.emails import send_payment_success_email
 from datetime import datetime
+from config.utils import error_response
+import logging
 
 stripe.api_key = settings.STRIPE_SECRET_KEY# verfining the Stripe keys 
+
+logger = logging.getLogger(__name__)
 
 class StripeCheckoutView(APIView):
        permission_classes = [permissions.IsAuthenticated]
@@ -28,7 +32,11 @@ class StripeCheckoutView(APIView):
                      # PREVENT DOUBLE PAYMENTS
                      #cheking if this order already has "Success" paymet linked to it.
                      # 'hasster' checks if the 'payment relationship exists in the DB.
-                     if hasattr(order, 'payments') and order.payment.status == 'Success': # Question : what is "hasster" what is it for Answer: 
+                     if order.is_paid:
+                            return Response({"error": "This order is already paid."},status=400)
+                     
+                     payment = getattr(order, 'payment',None)
+                     if payment and payment.status == 'Success': 
                             return Response(
                                    {"error": "This order is already paid."},
                                    status=status.HTTP_400_BAD_REQUEST
@@ -69,14 +77,15 @@ class StripeCheckoutView(APIView):
                      
                      return Response({
                             'client_secret' : intent['client_secret'],
-                            'stripe_public_key' : settings.STRIPE_SECRET_KEY
+                            'stripe_public_key' : settings.STRIPE_PUBLIC_KEY
                      })
               except Exception as e:
                      #ERROR HANDINLING
                      #if Stripe is down, or keys are wrong, we catch the crash and tell the user.
-                     return Response(
-                            {"error" : str(e)},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                     return error_response(
+                            message="Unable to initiate payment at this moment. Please try again",
+                            status_code=500,
+                            log_message=f"Stripe Checkout Failure for Order {order_id} : {e}"
                      )
 
 #The Security Exception: telling Django to let in the Stripe request 
@@ -124,37 +133,49 @@ class StripeWebhookView(APIView):
                      intent = event['data']['object'] # The Payment details 
 
                      transaction_id = intent['id']
-                     order_id = intent['metadata']['order_id'] # Create the metadat in StripeCheckoutView
+                     order_id = intent['metadata'].get('order_id') # Create the metadat in StripeCheckoutView
                      
                      #Step A1 Mark payment as 'Success' DB
-                     payment = Payment.objects.get(transaction_id =  transaction_id)
-                     payment.status = 'Success'
-                     payment.save()
-                     
-                     #Step A2 Mark order As pending
-                     order = Order.objects.get(order_id = order_id)
-                     order.status = 'Pending'
-                     order.is_paid = True
-                     order.paid_at = datetime.now()
-                     order.save()
-                     
                      try:
-                           print(f"📧 Sending Payment Eamil for Order{order_id}...")
-                           send_payment_success_email(order) # the connection
+                            payment = Payment.objects.get(transaction_id =  transaction_id)
+                            payment.status = 'Success'
+                            payment.save()
+                     except Payment.DoesNotExist:
+                            logger.warning(f"Payment record missing for transaction {transaction_id}, but Stripe succeeded.")
                      except Exception as e:
-                           print(f"❌ Email Faild : {e}")
-                           
-                     print(f"✅ WEBHOOK: Payment Success for Order {order_id}")
+                            logger.error(f"Unexpected error updating Payment {transaction_id}: {e}")
+                            #Step A2 Mark order As pending
+                     try:
+                            order = Order.objects.get(order_id = order_id)
+                            order.status = 'Pending'
+                            order.is_paid = True
+                            order.paid_at = datetime.now()
+                            order.save()
+                            try:
+                                   send_payment_success_email(order)
+                            except Exception as e:
+                                   logger.error(f"Failed to send email for Order {order_id}: {e}")
+                     except Order.DoesNotExist:
+                            logger.error(f"CRITICAL: Stripe succeeded but Order {order_id} not found in DB!")
+                     except Exception as e:
+                            logger.error(f"Error updating Order {order_id} in webhook: {e}")
+                     return HttpResponse(status = 200)
+              
                            #Case B: Payment Failed (Card Declined , Insufficient funds)
               elif event['type'] == 'payment_intent.payment_failed':
                      intent = event['data']['object']
                      transaction_id = intent['id']
-
+                     errror_message = intent.get('last_payment_error', {}).get('message','Unknow error')
+                     try:
                      #mark the payment as Failed 
-                     payment = Payment.objects.get(transaction_id = transaction_id)
-                     payment.status = 'Failed'
-                     payment.save()
-                     
-                     print(f"❌ Webhook : Payment Failed for Transaction {transaction_id}")
-
-              return HttpResponse(status=200)  # Stripe will keep re-sending the "Payment Success" webhook every hour for roughly 3 days until your server finally replies with "200 OK" (which means "I got it, stop yelling"). 
+                            payment = Payment.objects.get(transaction_id = transaction_id)
+                            payment.status = 'Failed'
+                            payment.save()
+                            logger.warning(f"payment Faild for Transaction {transaction_id}: {errror_message}")
+                     except Payment.DoesNotExist:
+                            logger.error(f"Webhook received failure for unknown Transaction {transaction_id}")
+                            return HttpResponse(status = 200)
+                     except Exception as e:
+                            logger.error(f"Unexpected DB error in Webhook failure case: {e}")
+                            return HttpResponse(status=200)  # Stripe will keep re-sending the "Payment Success" webhook every hour for roughly 3 days until your server finally replies with "200 OK" (which means "I got it, stop yelling"). 
+              

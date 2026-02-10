@@ -10,6 +10,8 @@ from orders.models import Order, OrderItem
 from rest_framework.decorators import action
 from django.db.models import Avg, Count
 from django.core.cache import cache
+from config.utils import error_response
+import logging
 
 class ProductFilter(django_filters.FilterSet):
        
@@ -22,14 +24,12 @@ class ProductFilter(django_filters.FilterSet):
        class Meta:
               model = Product
               fields = ['category', 'brand', 'is_active']
-
+logger = logging.getLogger(__name__)
 class ProductViewSet(viewsets.ModelViewSet):
       """A unified Viewset for viewing and editing products.
       -cutomers can read (list/retrieve)
       -admin can write (create/update/delete)"""
       
-
-
       queryset = Product.objects.select_related('category').prefetch_related('variants','images').annotate(average_rating = Avg('reviews__rating'),review_count = Count('reviews'))
       serializer_class = ProductSerializer
       
@@ -46,10 +46,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
       ordering_fields = ['price', 'created_at']
       ordering = ['-created_at'] # Default sort: Newest first
-      
-      
-       
-       
+ 
       def get_permissions(self):
              if self.action == 'add_reveiw':
                     return [permissions.IsAuthenticated]
@@ -91,16 +88,45 @@ class ProductViewSet(viewsets.ModelViewSet):
       
       def list(self,request,*args, **kwargs):
               cache_key = f"product_list{request.query_params.urlencode()}"
-              
-              stored_data = cache.get(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-              response = super().list(request,*args, **kwargs)
-              cache.set(cache_key,response.data,900)
+              try: # Read Attempt
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                    logger.error(f"Cache Read Error on Product list: {e}")
+                           # log the error to debug.log insted of printing
+              try: #Data base Fetch
+                     response = super().list(request,*args, **kwargs)
+              except Exception as e:
+                     return error_response(message="Service temproraily Unavailabe",log_message=f"Data Base Error on Product list {e}")
+              try: # Wrtie Attempt
+                     cache.set(cache_key,response.data,900)
+              except Exception as e:
+                    logger.error(f"Cache Write Error on Product list: {e}")
               return response
+      def retrieve(self, request, *args, **kwargs):
+             slug = kwargs.get('slug')
+             cache_key = f"product_detail_{slug}"
+             try:
+                   stored_data = cache.get(cache_key) 
+                   if stored_data:
+                          return Response(stored_data)
+             except Exception as e:
+                    logger.error(f"Error fetching cache:{e}")
+             try:
+                     instance = self.get_object()
+                     serializer = self.get_serializer(instance)
+                     data = serializer.data
+             except Exception as e:
+                     return error_response(message="Prodct Not Found or Service unavilable",status_code= 404, log_message=f"Error in Fetching data from DB: {e}")
+             try:
+                    cache.set(cache_key,data,900)
+             except Exception as e:
+                    logger.error(F"Cache Write error {e}") 
+             return Response(data) 
+       
 
-             
-          
+              
 class CategoryViewSet(viewsets.ModelViewSet):
        
        """Viewset for Categories.
@@ -117,13 +143,49 @@ class CategoryViewSet(viewsets.ModelViewSet):
                      return [IsSellerOrAdmin()]
        def list(self,request,*args, **kwargs):
               cache_key = "category_list_all"
-
-              stored_data = cache.get(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-              response = super().list(request,*args, **kwargs)
-              cache.set(cache_key,response.data,900)
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Cache error on Category list: {e}")
+              try:       
+                     response = super().list(request,*args, **kwargs)
+              except Exception as e:
+                     return error_response(
+                            message="Unable to fetch categories at this time.", log_message=f"Databse Error on Category Viewset: {e}")
+              try:
+                     cache.set(cache_key,response.data,900)
+              except  Exception as e:
+                     logger.error(f"Cache Write Error on Category list: {e}")
               return response
+       
+       def retrieve(self, request, *args, **kwargs):
+              slug = kwargs.get('slug') 
+              cache_key = f"category_detail_{slug}" # how we are getting the slug in here 
+              
+              try: # Read Attempt
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Error Fetching in Category Cache : {e}")
+              
+              try: # Data base fetch
+                     instance = self.get_object() # This is the "Search" step. It uses the slug and the queryset you defined at the top of the class to find the exact row in your database. 
+                     serializer = self.get_serializer(instance) # what is this line is for 
+                     data = serializer.data # what is this for 
+              except Exception as e:
+                     return error_response(
+                     message = "Category not found or  removed",
+                     status_code = 404,
+                     log_message = f"DB error in Category Viewset : {e}")
+              try:
+                     cache.set(cache_key,data,900)
+              except Exception as e:
+
+                     logger.error(f"Cache Write Error on Category: {e}")
+              return Response(data)
 
 
 class ProductVariantViewSet(viewsets.ModelViewSet):
@@ -132,6 +194,7 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
        queryset = ProductVariant.objects.all()
        serializer_class = ProductVarinatSerializer
        permission_classes = [IsSellerOrAdmin]
+       lookup_field = 'slug'
 
        def get_queryset(self):
               """Allow filtering variants by  product.
@@ -142,19 +205,59 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
                      return self.queryset.filter(product_id=product_id)
               return self.queryset
        def list(self, request,*args, **kwargs):
+              stored_data = None
+              product_id = None
               product_id = request.query_params.get('product_id')
               params = request.query_params.urlencode()
               cache_key = f"product_variants_{params}"
-              if product_id:
-                     stored_data = cache.get(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-              if product_id:
+              response = None
+              try:
+                     if product_id:
+                            stored_data = cache.get(cache_key)
+                            if stored_data:
+                                   return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Cache Read Error on Product Variant list:{e}")
+              try:
                      response = super().list(request,*args, **kwargs)
-                     cache.set(cache_key,response.data,900)
-                     return response
+              except Exception as e:
+                     logger.error(f"Database Errro on Product Variant list:{e}")
+                     return error_response(message="Unable to fetch Product Variant list",log_message=f"Data base Error on Product Varinat Viewset: {e}")
+              try:
+                     if product_id and response:
+                            cache.set(cache_key,response.data,900)
+              except Exception as e:
+                     logger.error(f"Cache Write Error on Product Variant List")
+                     
+              return response
 
-class ReveiwViewSet(viewsets.ModelViewSet):
+       def retrieve(self, request, *args, **kwargs):
+              slug = kwargs.get('slug')
+              cache_key = f"Product_varint_{slug}"
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Error in ProductVariant Viewset Caching :{e}")
+              try:
+                     instance = self.get_object()
+                     serializer = self.get_serializer(instance)
+                     data = serializer.data
+              except Exception as e:
+                     return error_response(
+                            message="This Variant is not Avalible",
+                            status_code=404,
+                            log_message=f"Error in DB Fetching in Product Variant Viewset: {e}"
+                     )
+              try:
+                     cache.set(cache_key,data,900)
+              except Exception as e:
+                     logger.error(f"Error in Cahcing on Product Variant Viewset: {e}")
+       
+              return Response(data)
+       
+class ReviewViewSet(viewsets.ModelViewSet):
        """Handles:
        -get (list/retrive)
        put/delete (update- restricted to author)
@@ -163,7 +266,6 @@ class ReveiwViewSet(viewsets.ModelViewSet):
        queryset = Review.objects.all()
        serializer_class = ReviewSerializer
        permission_classes = [IsReviewAuthorOrReadOnly] # the Custom permission
-      
 
        
        def get_queryset(self):
@@ -184,14 +286,46 @@ class ReveiwViewSet(viewsets.ModelViewSet):
                      cache_key = f"reviews_product_{params}"
               else:
                      cache_key = "review_list_all"
-              
-              stored_data = cache.get(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-              
-              response = super().list(request,*args, **kwargs)
-              cache.set(cache_key,response.data,900)
+              try:       
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Cache Read Error on Product Reveiw list : {e}")
+              try:       
+                     response = super().list(request,*args, **kwargs)
+              except Exception as e:
+                     logger.error(f'Data base Error on Review list {e}')
+                     return error_response(message="unable to fetch Review list",log_message=f"Data base error on Review View Set: {e}")
+              try:
+                     cache.set(cache_key,response.data,900)
+              except Exception as e:
+                     logger.error(f"Cache Write Error on Review list : {e}")
               return response
-       
+       def retrieve(self, request, *args, **kwargs):
+              pk = kwargs.get('pk')
+              cache_key = f"Review_details_{pk}"
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Cache Read Error on Review: {e}")
+              try:
+                     instance = self.get_object()
+                     serialzier = self.get_serializer(instance)
+                     data = serialzier.data
+              except Exception as e:
+                     return error_response(
+                            message="Review Not Found",
+                            status_code=404,
+                            log_message=f"Error in DB on ReviewViewst {e}"       
+                     )
+              try:
+                     cache.set(cache_key,data,900)
+              except Exception as e:
+                     logger.error(f"error in Cache set on ReviewVieset: {e}")
 
-       
+              return Response(data)
+
+                     

@@ -8,7 +8,10 @@ from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressS
 from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
 from datetime import datetime
 from django.core.cache import cache
+from config.utils import error_response
+import logging
 
+logger = logging.getLogger(__name__)
 class OrderViewSet(viewsets.ModelViewSet):
        serializer_class = OrderSerializer
        permission_classes = [permissions.IsAuthenticated]# need to login
@@ -228,22 +231,97 @@ class OrderViewSet(viewsets.ModelViewSet):
        def list(self,request,*args, **kwargs):
               user_id = request.user.id
               cache_key = f"user_{user_id}_orders_{request.query_params.urlencode()}"
-              stored_data = cache.get(cache_key)
-              print(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-
-              response = super().list(request,*args, **kwargs)
-              cache.set(cache_key,response.data,300)
+              try:
+                     stored_data = cache.get(cache_key)
+              
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Cache Read Errro for User{user_id} orders : {e}")
+              try:
+                     response = super().list(request,*args, **kwargs)
+              except Exception as e:
+                     return error_response(
+                            message="Unable to load your Orders at this time",status_code=500,log_message=f"DB error on Order list for User {user_id}: {e}"
+                     )
+              try:
+                     cache.set(cache_key,response.data,300)
+              except Exception as e:
+                     logger.error(f"Cache Write Error for User {user_id} order: {e}")
+                     
               return response                    
+       
+       def retrieve(self, request, *args, **kwargs):
+              order_id = kwargs.get('order_id')
+              cache_key = f"Order_detail_{order_id}"
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Error fetching Cache for Order {order_id} :{e}")
+              try:
+                     instance = self.get_object()
+                     serializer = self.get_serializer(instance)
+                     data = serializer.data
+              except Exception as e:
+                     return error_response(message="Order Not Found",status_code=404,log_message=f"Error in Fetching Order {order_id} from DB : {e}")
+              try:
+                     cache.set(cache_key,data,900)
+              except Exception as e:
+                     logger.error(f"Cache write error for {order_id} :{e}")
+              return Response(data)
+
+                     
        
 class ShippingAddressViewSet(viewsets.ModelViewSet):
        serializer_class = ShippingAddressSerializer
        permission_classes = [permissions.IsAuthenticated]
-
+       lookup_field ='user'
        def get_queryset(self):
               return ShippingAddress.objects.filter(user=self.request.user)#only show USER address
        def perform_create(self, serializer):
               serializer.save(user=self.request.user) # auto-assign the logged-in use when saving 
-              
+       def list(self,request,*args, **kwargs):
+              user_id  = request.user.id
+              cache_key = f"user_{user_id}_address_{request.query_params.urlencode()}"
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Error on Fetching Cache on user :{user_id} : {e}")
+              try:
+                     response = super().list(request,*args, **kwargs)
+              except Exception as e:
+                     return error_response(
+                            message = "Unable to Load Your Address At This time",status_code = 500,
+                            log_message = f"DB error In Address on User: {user_id} : {e}"
+                     )
+              try:
+                     cache.set(cache_key, response.data, 300)
+              except Exception as e:
+                     logger.error(f"Error in Cache Write in AddressViewset")
+              return response
+       def retrieve(self, request, *args, **kwargs):
+              user_id = kwargs.get('pk')
+              cache_key = f"Address_details_{user_id}"
+              try:
+                     stored_data = cache.get(cache_key)
+                     if stored_data:
+                            return Response(stored_data)
+              except Exception as e:
+                     logger.error(f"Error in Cache Read on Address on User :{user_id} :{e}")
+              try:
+                     instance = self.get_object()
+                     serializer= self.get_serializer(instance)
+                     data = serializer.data 
+              except Exception as e:
+                     return error_response(message="Unable to Retrieve Address Details",status_code=500,log_message="DB error when trying to fetch Address")
+              try:
+                     cache.set(cache_key,data,300)
+              except Exception as e:
+                     logger.error(f"Error in Cacheset on AddressViewSet Retrive method :{e}")
+              return Response(data)
+
                      
