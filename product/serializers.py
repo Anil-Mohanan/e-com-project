@@ -62,7 +62,7 @@ class ProductSerializer(serializers.ModelSerializer):
               
        def create(self,validate_data):
               # Pop the Image out (Product model doesn't handle them directily)
-              uploaded_images = validate_data.pop('uploaded_images',[])
+              uploaded_images =  validate_data.pop('uploaded_images',[])
               # Create the Product (The Category_id is automatically handled by 'source=category')
               
               product = Product.objects.create(**validate_data)

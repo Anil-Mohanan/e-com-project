@@ -1,6 +1,7 @@
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .serializers import UserRegistrationSerializer, UserSerializer
+from .serializers import UserRegistrationSerializer, UserSerializer, CustomTokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -20,7 +21,19 @@ class RegisterView(generics.CreateAPIView):# using generics for safety reasons ,
        queryset = User.objects.all()
        serializer_class = UserRegistrationSerializer
        permission_classes = [AllowAny]# Anyone must be able to register!
+       
+       def perform_create(self, serializer):
+              user = serializer.save()
+              
+              uid = urlsafe_base64_encode(force_bytes(user.pk))  # :urlsafe_base64_encode takes the user's Primary Key (like 15) and turns it into a string (like MTU)
+              token = default_token_generator.make_token(user) #default_token_generator.make_token creates a one-time-use string based on the user's password and the current time. It's the "key" that proves the link is real
+              
+              link = reverse('verify_email', kwargs={'uidb64': uid, 'token' : token})       
 
+              verification_url = f"http://127.0.0.1:8000{link}"
+
+              send_mail('Verify your email',f"Click here :{verification_url}",'from@example.com',[user.email])
+              
 class LogoutView(APIView):
        permission_classes = [IsAuthenticated]
        def post(self,request):
@@ -33,7 +46,7 @@ class LogoutView(APIView):
                      
                      return Response({"message" : "Successfully logged Out"}, status=status.HTTP_205_RESET_CONTENT)
               except Exception as e:
-                     return error_response(message="Unable to Log Out. Please Try again",status_code=500,log_message=f"Token Error in LogOutView : {e}")
+                     return error_response(message="Unable to Log Out. Please Try again",status_code=400,log_message=f"Token Error in LogOutView : {e}")
               
 class UserProfileView(generics.RetrieveUpdateAPIView):
        queryset = User.objects.all()
@@ -57,8 +70,10 @@ class DeleteAccountView(APIView):
                      user.delete()
                      return Response({"message": "Account deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
               except Exception as e:
-                     return error_response(message="Unable to delete Account At this Moment", status_code=500, log_message=f"Error in DeleteAccountView : {e}")
+                     return error_response(message="Unable to delete Account At this Moment", status_code=401, log_message=f"Error in DeleteAccountView : {e}")
+              
 class VerifyEmailView(APIView):
+
        def get(self,request,uidb64,token):
               try:
                      uid = force_str(urlsafe_base64_decode(uidb64))
@@ -74,3 +89,9 @@ class VerifyEmailView(APIView):
                             return Response({"error": "Invalid Link"}, status=status.HTTP_400_BAD_REQUEST)
               except Exception as e:
                      return error_response(message="Unable to Verify Email at this moment", status_code=500, log_message=f"Error in VerifyEmailView : {e}")
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+       """custom loig Ve that use custom serialzer to check for email verification and update last login time """
+
+       serializer_class = CustomTokenObtainPairSerializer

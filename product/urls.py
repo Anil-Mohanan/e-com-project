@@ -3,9 +3,9 @@ from rest_framework.routers import DefaultRouter
 from .views import ProductViewSet, CategoryViewSet,ProductVariantViewSet, ReviewViewSet
 
 router = DefaultRouter()
-router.register(r'products',ProductViewSet)
-router.register(r'categories',CategoryViewSet)
-router.register(r'variants',ProductVariantViewSet)
+router.register(r'products',ProductViewSet,basename='products')
+router.register(r'categories',CategoryViewSet,basename='category')
+router.register(r'variants',ProductVariantViewSet,basename='variants')
 router.register(r'reviews',ReviewViewSet, basename='reviews')
 
 

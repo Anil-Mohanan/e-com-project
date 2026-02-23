@@ -124,9 +124,7 @@ class ProductViewSet(viewsets.ModelViewSet):
              except Exception as e:
                     logger.error(F"Cache Write error {e}") 
              return Response(data) 
-       
-
-              
+                  
 class CategoryViewSet(viewsets.ModelViewSet):
        
        """Viewset for Categories.
@@ -200,7 +198,7 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
               """Allow filtering variants by  product.
               Example. /api/variants/?product_id = 1 -> Show only variants for Product#1"""
 
-              product_id = self.request.query_params.get('product_id')
+              product_id = self.request.query_params.get('product')
               if product_id:
                      return self.queryset.filter(product_id=product_id)
               return self.queryset
@@ -269,12 +267,13 @@ class ReviewViewSet(viewsets.ModelViewSet):
 
        
        def get_queryset(self):
-              # if the use ask for specific reveiw
-              if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:# 
-                     return Review.objects.all().order_by('-created_at')
-              #if the user ask for all the review . check is the admin or not 
-              if self.request.user.is_staff:
-                     return Review.objects.all().order_by('-created_at')
+              # if the user ask for specific reveiw
+              if self.action in ['retrieve', 'update', 'partial_update', 'destroy','list'] or self.request.user.is_staff:
+                     queryset = Review.objects.all().order_by('-created_at') # at this stage it contian reviews or every product every sold
+                     product_id = self.request.query_params.get('product_id')# getting the review of a specific product
+                     if product_id:
+                            queryset = queryset.filter(product_id=product_id)#filtered or review of the specific product 
+                     return queryset
               return Review.objects.none()
        
        http_method_names = ['get', 'put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive 

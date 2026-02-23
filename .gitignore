@@ -15,3 +15,7 @@ media/
 *.exe
 
 debug.log
+
+.agent/
+.vscode/
+

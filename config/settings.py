@@ -133,7 +133,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    },   
 ]
 
 
@@ -162,11 +162,12 @@ from datetime import timedelta
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'user_auth.backends.CustomJWTAuthentication',
     ),
     # ADD THESE LINES FOR PAGINATION AND FILTERING:
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
+       
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12, # 12 is a good number (divisible by 2, 3, 4 for grid layouts)
@@ -188,6 +189,7 @@ SIMPLE_JWT = {
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
+    'UPDATE_LAST_LOGIN': True,
 } 
 
 #Media Files (user uploads like Product Images)
@@ -218,17 +220,55 @@ LOGGING = {
     },
     'handlers': {
         'file': {
-            'level': 'ERROR',
+            'level': 'WARNING',  # Only WARNING, ERROR, and CRITICAL go in the file
             'class': 'logging.FileHandler',
-            'filename': 'debug.log', # This creates a file named debug.log
+            'filename': BASE_DIR / 'debug.log', # Saves in the root of your project
             'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO', # INFO and above show up in your VS Code terminal
+            'class': 'logging.StreamHandler',
         },
     },
     'loggers': {
         'django': {
-            'handlers': ['file'],
-            'level': 'ERROR',
+            'handlers': ['file','console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        # We can create a custom logger for our App
+        'orders': {
+            'handlers': ['file','console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'payments': {
+            'handlers': ['file','console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'product': {
+            'handlers': ['file','console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'user_auth': {
+            'handlers': ['file','console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'analytics': {
+            'handlers': ['file','console'],
+            'level': 'INFO',
             'propagate': True,
         },
     },
 }
+AUTHENTICATION_BACKENDS = [
+    'user_auth.backends.CaseInsensitiveModelBackend', 
+    'django.contrib.auth.backends.ModelBackend', # Fallback
+]
+# import sys
+# if 'test' in sys.argv:
+#     REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
+#     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {}
