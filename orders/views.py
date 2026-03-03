@@ -8,6 +8,7 @@ from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressS
 from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
 from datetime import datetime
 from django.core.cache import cache
+from config.cache_utils import cache_response
 from config.utils import error_response
 import logging
 
@@ -25,7 +26,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               user = self.request.user
               if user.is_staff:# checks if the user is Admin / Staff
                      return queryset.order_by('-created_at')
-              return queryset.filter(user= user).order_by('-created_at') # ensuring that the loged in user only sees only his orders
+              return queryset.for_user(user).order_by('-created_at') # ensuring that the loged in user only sees only his orders
 
                      
        @action(detail=False,methods =['post'])
@@ -33,10 +34,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               product_id = request.data.get('product_id')
               quantity = int(request.data.get('quantity',1))
 
-              order, created = Order.objects.get_or_create(
-                     user=request.user,
-                     status = 'Cart'
-              )
+              order, created = Order.objects.get_or_create_cart(request.user)
 
               item,created = OrderItem.objects.get_or_create(
                      order = order,
@@ -62,7 +60,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               quantity = int(request.data.get('quantity',1))
               
               try:
-                     order = Order.objects.get(user = request.user, status = 'Cart')
+                     order = Order.objects.current_cart(request.user).get()
                      item = OrderItem.objects.get(order=order, product_id = product_id)
               except OrderItem.DoesNotExist:
                      return Response({"error ": "Item not in Cart"},status=status.HTTP_404_NOT_FOUND)
@@ -81,7 +79,7 @@ class OrderViewSet(viewsets.ModelViewSet):
        def remove_item(self,request):
               product_id = request.data.get('product_id')#to whom . whom where requesting too for the data
               try:
-                     order = Order.objects.get(user=request.user, status='Cart')
+                     order = Order.objects.current_cart(request.user).get()
                      item = OrderItem.objects.get(order=order, product_id= product_id)
                      item.delete()
                      order.save()
@@ -102,7 +100,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               try:
                      with transaction.atomic():
                             #Get the cart
-                            order = Order.objects.get(user=request.user, status = 'Cart')
+                            order = Order.objects.current_cart(request.user).get()
                             # Get the Address
                             address = ShippingAddress.objects.get(id = address_id, user = request.user)
 
@@ -134,22 +132,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return Response({'error': 'Invalid Address ID'}, status=status.HTTP_404_NOT_FOUND)
               except ValueError as e:
                      return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
        @action(detail=False, methods=['get'])
+       @cache_response(key_prefix="user_cart", timeout=60, user_specific=True, error_message="Unable to load your cart")
        def cart(self,request):
               """Fethc the current user's active cart.
               if it doesn't exist, create a new one."""
-              cache_key = f"user_cart_{request.user.id}"
-              stored_data = cache.get(cache_key)
-              if stored_data:
-                     return Response(stored_data)
-              
-              order, created = Order.objects.get_or_create(
-                     user= request.user,
-                     status = 'Cart'
-              )
+              order, created = Order.objects.get_or_create_cart(request.user)
               serializer = self.get_serializer(order)
-              cache.set(cache_key,serializer.data,60)
               return Response(serializer.data)
+
        @action(detail=True, methods=['patch'])
        def update_status(self,request,order_id = None):
               """only Admin Can change the order status(e.g, Pending, shipped)"""
@@ -173,6 +165,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                             print(f"Shipping email failed:{e}")
               
               return Response({'status': 'Order updated', 'current_status':order.status})
+
        @action(detail=True, methods=['post'])
        def cancel_order(self,request,order_id = None):
               """Allow user to Cancel their OWN order.
@@ -203,6 +196,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                             return Response({'status': 'Order cancelled Successfully','new_status': 'Cancelled'})
               except Exception as e:
                      return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                     
        @action(detail=True, methods=['patch'])
        def mark_as_paid(self,request, order_id =None):
               """Manal Pay by the Admin to Mark an order is paid Use full of COD"""
@@ -228,48 +222,15 @@ class OrderViewSet(viewsets.ModelViewSet):
        
        
        
+       @cache_response(key_prefix="user_orders", timeout=300, user_specific=True, error_message="Unable to load your Orders at this time")
        def list(self,request,*args, **kwargs):
-              user_id = request.user.id
-              cache_key = f"user_{user_id}_orders_{request.query_params.urlencode()}"
-              try:
-                     stored_data = cache.get(cache_key)
-              
-                     if stored_data:
-                            return Response(stored_data)
-              except Exception as e:
-                     logger.error(f"Cache Read Errro for User{user_id} orders : {e}")
-              try:
-                     response = super().list(request,*args, **kwargs)
-              except Exception as e:
-                     return error_response(
-                            message="Unable to load your Orders at this time",status_code=500,log_message=f"DB error on Order list for User {user_id}: {e}"
-                     )
-              try:
-                     cache.set(cache_key,response.data,300)
-              except Exception as e:
-                     logger.error(f"Cache Write Error for User {user_id} order: {e}")
-                     
-              return response                    
+              return super().list(request,*args, **kwargs)                    
        
+       @cache_response(key_prefix="Order_detail", timeout=900, user_specific=True, error_message="Order Not Found")
        def retrieve(self, request, *args, **kwargs):
-              order_id = kwargs.get('order_id')
-              cache_key = f"Order_detail_{order_id}"
-              try:
-                     stored_data = cache.get(cache_key)
-                     if stored_data:
-                            return Response(stored_data)
-              except Exception as e:
-                     logger.error(f"Error fetching Cache for Order {order_id} :{e}")
-              try:
-                     instance = self.get_object()
-                     serializer = self.get_serializer(instance)
-                     data = serializer.data
-              except Exception as e:
-                     return error_response(message="Order Not Found",status_code=404,log_message=f"Error in Fetching Order {order_id} from DB : {e}")
-              try:
-                     cache.set(cache_key,data,900)
-              except Exception as e:
-                     logger.error(f"Cache write error for {order_id} :{e}")
+              instance = self.get_object()
+              serializer = self.get_serializer(instance)
+              data = serializer.data
               return Response(data)
 
                      
@@ -282,46 +243,16 @@ class ShippingAddressViewSet(viewsets.ModelViewSet):
               return ShippingAddress.objects.filter(user=self.request.user)#only show USER address
        def perform_create(self, serializer):
               serializer.save(user=self.request.user) # auto-assign the logged-in use when saving 
+
+       @cache_response(key_prefix="user_address", timeout=300, user_specific=True, error_message="Unable to Load Your Address At This time")
        def list(self,request,*args, **kwargs):
-              user_id  = request.user.id
-              cache_key = f"user_{user_id}_address_{request.query_params.urlencode()}"
-              try:
-                     stored_data = cache.get(cache_key)
-                     if stored_data:
-                            return Response(stored_data)
-              except Exception as e:
-                     logger.error(f"Error on Fetching Cache on user :{user_id} : {e}")
-              try:
-                     response = super().list(request,*args, **kwargs)
-              except Exception as e:
-                     return error_response(
-                            message = "Unable to Load Your Address At This time",status_code = 500,
-                            log_message = f"DB error In Address on User: {user_id} : {e}"
-                     )
-              try:
-                     cache.set(cache_key, response.data, 300)
-              except Exception as e:
-                     logger.error(f"Error in Cache Write in AddressViewset")
-              return response
+              return super().list(request,*args, **kwargs)
+
+       @cache_response(key_prefix="Address_details", timeout=300, user_specific=True, error_message="Unable to Retrieve Address Details")
        def retrieve(self, request, *args, **kwargs):
-              user_id = kwargs.get('pk')
-              cache_key = f"Address_details_{user_id}"
-              try:
-                     stored_data = cache.get(cache_key)
-                     if stored_data:
-                            return Response(stored_data)
-              except Exception as e:
-                     logger.error(f"Error in Cache Read on Address on User :{user_id} :{e}")
-              try:
-                     instance = self.get_object()
-                     serializer= self.get_serializer(instance)
-                     data = serializer.data 
-              except Exception as e:
-                     return error_response(message="Unable to Retrieve Address Details",status_code=500,log_message="DB error when trying to fetch Address")
-              try:
-                     cache.set(cache_key,data,300)
-              except Exception as e:
-                     logger.error(f"Error in Cacheset on AddressViewSet Retrive method :{e}")
+              instance = self.get_object()
+              serializer= self.get_serializer(instance)
+              data = serializer.data 
               return Response(data)
 
                      

@@ -64,14 +64,19 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'config.middleware.IpBlacklistingMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'config.middleware.ReqeustTimeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'user_auth.middleware.UpdateLastActivityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'analytics.middleware.AuditLogMiddleware',
+    'config.middleware.GlobalExceptionMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -272,3 +277,5 @@ AUTHENTICATION_BACKENDS = [
 # if 'test' in sys.argv:
 #     REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
 #     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {}
+
+# BANNED_IPS = ['127.0.0.1'] this is used to work the IP block MIDDLEWARE

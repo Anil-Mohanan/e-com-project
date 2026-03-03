@@ -5,7 +5,14 @@ from django.core.validators import validate_email
 from django.core.exceptions import ValidationError 
 
 # Create your models here.
-class CustomUserManager(BaseUserManager):
+class UserQuerySet(models.QuerySet):
+       def seller(self):
+              return self.filter(is_seller = True)
+
+       def customer(self):
+              return self.filter(is_customer = True)
+
+class CustomUserManager(BaseUserManager.from_queryset(UserQuerySet)):
        def create_user(self,email,is_staff = False, is_superuser = False, password = None,is_email_verified=False, **extra_fields):
               if not email:
                      raise ValueError('The Email field must be set')
@@ -86,3 +93,21 @@ class User(AbstractUser):
        def __str__(self):
               return self.email
        
+class UserDeviceSessionQuerySet(models.QuerySet):
+       def for_user(self,user):
+              return self.filter(user = user) # filter the user instantly
+
+       def by_ip(self,ip_address):
+              return self.filter(ip_address = ip_address)
+
+class UserDeviceSession(models.Model):
+       user = models.ForeignKey(User,on_delete=models.CASCADE)
+       jti =  models.CharField(max_length=255,unique=True)
+       ip_address =  models.GenericIPAddressField(null= True, blank=True)
+       device_name = models.CharField(max_length=255, null=True, blank=True)
+       created_at = models.DateTimeField(auto_now_add=True)
+
+       objects = UserDeviceSessionQuerySet.as_manager()
+
+       def __str__(self):
+              return f"{self.user.email} - {self.device_name}"

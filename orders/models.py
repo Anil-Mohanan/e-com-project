@@ -24,7 +24,22 @@ class ShippingAddress(models.Model):
 
        def __str__(self):
               return f"{self.full_name} - {self.city}"
+
+class OrderQuerySet(models.QuerySet):
        
+       def valid_sales(self):
+              return self.exclude(status__in = ["Cart", "Cancelled"])
+
+       def for_user(self):
+              return self.filter(user = user)
+
+       def current_cart(self,user):
+              return self.filter(user = user, status = "Cart")
+
+       def get_or_create_cart(self,user):
+              cart, created = self.get_or_create(user = user, status = 'Cart')
+              return cart , created
+
 class Order(models.Model):
        ORDER_STATUS = (
               ('Cart', 'Cart'),
@@ -33,7 +48,7 @@ class Order(models.Model):
               ('Delivered', 'Delivered'),
               ('Cancelled', 'Cancelled'),
        )
-
+       objects = OrderQuerySet.as_manager()
        user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
        shipping_address = models.ForeignKey(ShippingAddress,on_delete=models.SET_NULL, null=True, blank=True)#deleting an address from your profile, we don't want to delete all the historical orders sent to that address. We just keep the order but say "Address was deleted".
        status = models.CharField(max_length=20, choices=ORDER_STATUS, default='Cart')
@@ -74,7 +89,14 @@ class Order(models.Model):
                      self.total_price = new_total
                      super().save(update_fields=['total_price'])
 
+class OrderItemQuerySet(models.QuerySet):
        
+       def top_selling(self,limit=5):
+              return self.values('product__name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
+       
+       
+
+
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')

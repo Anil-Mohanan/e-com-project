@@ -13,6 +13,9 @@ from django.utils.encoding import force_bytes , force_str
 from django.core.mail import send_mail
 from django.urls import reverse
 from config.utils import error_response
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+from .models import UserDeviceSession
+
 import logging
 
 User = get_user_model()
@@ -95,3 +98,56 @@ class CustomTokenObtainPairView(TokenObtainPairView):
        """custom loig Ve that use custom serialzer to check for email verification and update last login time """
 
        serializer_class = CustomTokenObtainPairSerializer
+
+class ActiveSessionView(APIView):
+       permission_classes = [IsAuthenticated]
+
+       def get(self,request):
+              try:
+                     tokens = OutstandingToken.objects.filter(user = request.user)   # Django will return a list contianing every single refresh token
+                      
+                     active_sessions = []
+                     for token in tokens:
+                            if not hasattr(token,'blacklistedtoken'):
+                                   ip_add = "Unknown"
+                                   device = "Unknown"
+                                   try:
+                                          device_session = UserDeviceSession.objects.get(jti = token.jti)
+                                          ip_add = device_session.ip_address
+                                          device = device_session.device_name
+
+                                   except UserDeviceSession.DoesNotExist:
+                                          pass
+
+                                   active_sessions.append({
+                                          "jti": token.jti,
+                                          "created_at": token.created_at,
+                                          "expires_at": token.expires_at,
+                                          "ip_address" : ip_add,
+                                          "device_name": device,
+                                   })
+                     return Response(active_sessions)
+              except Exception as e:
+                     return error_response(message="No ActiveSession Found",status_code=404,log_message=f"Error in ActiveSessionView : {e}")
+
+
+class RevokedDevicesView(APIView):
+
+       permission_classes = [IsAuthenticated]
+
+       def post(self,request):
+              
+              token_jti = request.data.get('jti')
+
+              if not token_jti:
+                            return Response({"message": "JTI is Required"},status=status.HTTP_400_BAD_REQUEST)
+              try:
+                     token = OutstandingToken.objects.get(jti = token_jti, user = request.user) # find the OutstandingToken token using JTI
+
+                     BlacklistedToken.objects.get_or_create(token = token) # Blacklisting only the specfic device session
+
+                     return Response({"message": "Logout Sucess from the device"})
+              except OutstandingToken.DoesNotExist:
+                     return error_response(message='Session not found or already logged out', status_code=404, log_message="Error in RevokedDevicesView")
+
+                     

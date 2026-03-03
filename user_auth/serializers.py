@@ -3,7 +3,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import update_last_login
+from .models import UserDeviceSession
 User = get_user_model()
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -53,6 +55,26 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
               if not self.user.is_email_verified:
                      raise AuthenticationFailed("Email is not verified. Please verify you email ")
+
+              request = self.context.get('request')
+              refresh = RefreshToken(data['refresh']) # passing the raw refresh token back to refresh token class for to decode it 
+              new_jti = refresh['jti'] # Extracting the unique jit the serial number from the refresh token 
+              
+              x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')#  HTTP_X_FORWARDED_FOR Header contain the real use ip 
+
+              if x_forwarded_for: 
+                     ip = x_forwarded_for.split(',')[0]
+              else:
+                     ip = request.META.get('REMOTE_ADDR') # Django normaly store the IP address in the Header "REMOTE_ADDR"
+
+              device = request.META.get('HTTP_USER_AGENT','Unknown Device') # The WebBrowswer header "HTTP_USER_AGENT"
+
+              UserDeviceSession.objects.create( # Saving it into the DB
+                     user = self.user,
+                     jti = new_jti,
+                     ip_address = ip,
+                     device_name = device
+              )
               return data
 
        def get_token(cls,user):
