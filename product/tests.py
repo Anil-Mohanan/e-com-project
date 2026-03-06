@@ -57,9 +57,9 @@ class ProductAPITests(APITestCase):
                      rating = 8,
                      comment = 'Nice product'
               )
-              self.reivew_url = reverse('reviews-list')
-              self.list_url = reverse('products-list')
-              self.variant_list_url = reverse('variants-list')
+              self.reivew_url = reverse('reviews-list', kwargs={'version': 'v1'})
+              self.list_url = reverse('products-list', kwargs={'version': 'v1'})
+              self.variant_list_url = reverse('variants-list', kwargs={'version': 'v1'})
               self.user = get_user_model().objects.create_user(email='user1example@gmail.com', password='password123',is_staff=True, is_superuser = True)
               self.client.force_authenticate(user=self.user)
               

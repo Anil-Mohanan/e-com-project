@@ -57,10 +57,6 @@ INSTALLED_APPS = [
     'orders',
     'payments',
     'analytics'
-
-    
-    
-
 ]
 
 MIDDLEWARE = [
@@ -184,7 +180,22 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '5/minute',   # 5 requests per minute for strangers (Strict!)
         'user': '1000/day',   # 1000 requests per day for members
-    }
+    },
+    # ... any other existing settings like DEFAULT_AUTHENTICATION_CLASSES ...
+     'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
+
+         # 1. Choose the versioning scheme
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+    
+    # 2. What version should we assume if they manage to hit a URL without one?
+    'DEFAULT_VERSION': 'v1',
+    
+    # 3. What versions are actually allowed to exist? (Blocks 404s for /api/v99/)
+    'ALLOWED_VERSIONS': ['v1', 'v2'],
+    
+    # 4. What URL keyword argument will hold the version string? ('version' is standard)
+    'VERSION_PARAM': 'version',
+
 }
 # JWT Settings
 SIMPLE_JWT = {
@@ -267,6 +278,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': True,
         },
+        'config':{
+            'handlers' : ['file','console'],
+            'level': 'INFO',
+            'propagate' : True,
+        }
     },
 }
 AUTHENTICATION_BACKENDS = [

@@ -23,7 +23,7 @@ class DashboardSummaryView(APIView):
        permission_classes = [IsAdminUser]# Security : regular user cannot see this 
        
        @cache_response(key_prefix='dashboard_summary', timeout=900, error_message="There is An Error occured in Calculation")
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               # Calculate the Total Revenus
               #Only counting the Order that status is 'peding', 'shipped', 'Delivered'
               valid_orders = Order.objects.valid_sales()
@@ -51,7 +51,7 @@ class SalesChartView(APIView):
        permission_classes = [IsAdminUser]
 
        @cache_response(key_prefix='sales_chart_data', timeout=1800, error_message="Unable to Load Sales Chart View at this moment")
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               valid_orders = Order.objects.valid_sales()
               sale_data = (
                      valid_orders.annotate(date=TruncDate('created_at'))
@@ -65,7 +65,7 @@ class TopSellingProductsView(APIView):
        permission_classes = [IsAdminUser]
 
        @cache_response(key_prefix='top_selling_products', timeout=1800, error_message="Unable to load top selling products data.")
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               top_products = OrderItem.objects.top_selling()
               data_to_cache = list(top_products)
               return Response(data_to_cache)
@@ -76,7 +76,7 @@ class UserListView(APIView):
        permission_classes = [IsAdminUser]
 
        @cache_response(key_prefix='user_list', timeout=1800, error_message="Unable to Load User Details at this moment")
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               users = User.objects.filter(is_staff = False).values('id','first_name','email', 'date_joined')
               data_to_cache = list(users)
               return Response(data_to_cache)
@@ -88,7 +88,7 @@ class LowStockProductView(APIView):
        permission_classes = [IsAdminUser]
 
        @cache_response(key_prefix='low_stock_product', timeout=1800, error_message="Unable to Load the Low Stock Details at this moment")
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               low_stock_products = Product.objects.filter(
                      stock__lte = 5,
                      is_active = True
@@ -104,7 +104,7 @@ class AuditLogListView(APIView):
 
        serializer_class = AuditLogSerializer
 
-       def get(self,request):
+       def get(self,request,*args, **kwargs):
               audit_list = AuditLog.objects.all().order_by('-created_at')
               
               serializer = self.serializer_class(audit_list, many=True)

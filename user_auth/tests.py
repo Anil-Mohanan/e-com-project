@@ -181,11 +181,11 @@ class RegistrationAPITest(APITestCase):
        
        def setUp(self):
 
-              self.url = reverse('register')
+              self.url = reverse('register', kwargs={'version': 'v1'})
        
        def test_registration_successful(self): 
               """Test that a user can regsiter via the API"""
-              url = reverse('register') # What is 'reverse'
+              url = reverse('register', kwargs={'version': 'v1'}) # What is 'reverse'
               data = {
                      'email': 'newuser@example.com',
                      'password': 'pas@1989',
@@ -198,7 +198,7 @@ class RegistrationAPITest(APITestCase):
               
        def test_registration_with_same_email(self): # Edge Case
               """Testing that a User cannot Use same email again for regsiter"""
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               email = 'duplicate@example.com'
 
               get_user_model().objects.create_user(
@@ -221,13 +221,13 @@ class RegistrationAPITest(APITestCase):
                      'email': email,
                      'password' : 'anil#11032003',
               }
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               response = self.client.post(url,data,format = 'json')
               self.assertIn(response.data['email'],email)
               self.assertNotIn('password',response.data)
        
        def test_registration_sends_verification_email(self):
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               data = {
                      'email' : 'mailtest@gmail.com',
                      'password' : 'pass@2143#13',
@@ -245,12 +245,12 @@ class RegistrationAPITest(APITestCase):
                      'email' : 'testexample@gmail.com',
                      'password' : 'password123',
               }
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               response = self.client.post(url,data,format= 'json')
               self.assertEqual(response.status_code,status.HTTP_400_BAD_REQUEST)
 
        def test_registration_with_missing_email_fails(self): #Edge Case
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               data = {
                      'eamil' : None,
                      'password': 'ValidPassword1332#2134',
@@ -260,7 +260,7 @@ class RegistrationAPITest(APITestCase):
               self.assertEqual(response.status_code,status.HTTP_400_BAD_REQUEST)
               
        def test_registration_with_blank_fields_fails(self): # Edge Case
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
 
               data = {
                      'email' : '',
@@ -270,7 +270,7 @@ class RegistrationAPITest(APITestCase):
               self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
        def test_registration_blocks_sql_injection_input(self): # Edge Case
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               
               data = {
                      'email' : ' OR 1=1; --@gmail.com',
@@ -282,7 +282,7 @@ class RegistrationAPITest(APITestCase):
               self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
               
        def test_registration_blocks_xss_input(self): # Edge Case
-              url = reverse('register')
+              url = reverse('register', kwargs={'version': 'v1'})
               data = {
                      'email' : 'hacker@gmail.com',
                      'password' : 'hacker3134#1',
@@ -374,11 +374,11 @@ class RegistrationAPITest(APITestCase):
 class LoginAPITests(APITestCase):
        def setUp(self):
 
-              self.url_login = reverse('token_obtain_pair')
-              self.url_logout  = reverse('logout')
+              self.url_login = reverse('token_obtain_pair', kwargs={'version': 'v1'})
+              self.url_logout  = reverse('logout', kwargs={'version': 'v1'})
 
        def test_login(self):
-              url = reverse('token_obtain_pair')
+              url = reverse('token_obtain_pair', kwargs={'version': 'v1'})
               email = 'Userexample@gmail.com'
               password = 'anil@11032003'
        
@@ -399,7 +399,7 @@ class LoginAPITests(APITestCase):
               self.assertIn('refresh',response.data)       
        
        def test_for_login_edge_case(self):
-              url = reverse("token_obtain_pair")
+              url = reverse("token_obtain_pair", kwargs={'version': 'v1'})
               email = 'User1example@gmail.com'
               password = 'User4321Example'
 
@@ -428,7 +428,7 @@ class LoginAPITests(APITestCase):
                      password=password
               )
               refresh_token = RefreshToken.for_user(user)
-              url = reverse('logout')
+              url = reverse('logout', kwargs={'version': 'v1'})
               access_token = str(refresh_token.access_token)
               
               # 2. Set the ID card in the Header
@@ -446,7 +446,7 @@ class LoginAPITests(APITestCase):
                      password=password
               )
               refresh_token = RefreshToken.for_user(user)
-              url = reverse('logout')
+              url = reverse('logout', kwargs={'version': 'v1'})
               access_token = str(refresh_token.access_token)
               self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
               response = self.client.post(url,{'refresh': 'fake_toekn_232'},format = 'json')
@@ -528,7 +528,7 @@ class ProfileAPITests(APITestCase):
 
               self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + access_token)
 
-              url = reverse('profile')
+              url = reverse('profile', kwargs={'version': 'v1'})
               response = self.client.get(url)
 
               self.assertEqual(response.status_code,status.HTTP_200_OK)
@@ -544,7 +544,7 @@ class ProfileAPITests(APITestCase):
               )
               self.client.credentials()
 
-              url = reverse('profile')
+              url = reverse('profile', kwargs={'version': 'v1'})
               response = self.client.get(url)
 
               self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -564,7 +564,7 @@ class DeleteAccountAPITests(APITestCase):
               refresh_token = RefreshToken.for_user(user)
               self.client.credentials(HTTP_AUTHORIZATION = f'Bearer {refresh_token.access_token}')
               
-              url = reverse('delete_account')
+              url = reverse('delete_account', kwargs={'version': 'v1'})
               response = self.client.delete(url)
 
               self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -580,7 +580,7 @@ class DeleteAccountAPITests(APITestCase):
               )
               self.client.credentials()
               
-              url = reverse('delete_account')
+              url = reverse('delete_account', kwargs={'version': 'v1'})
               response = self.client.delete(url)
 
               self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -600,7 +600,7 @@ class EmailVerificationTests(APITestCase):
               uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
               token = default_token_generator.make_token(user)
 
-              url = reverse('verify_email',kwargs={'uidb64':uidb64,'token': token})
+              url = reverse('verify_email', kwargs={'version': 'v1', 'uidb64':uidb64,'token': token})
               response = self.client.get(url)
 
               user.refresh_from_db()
@@ -616,7 +616,7 @@ class EmailVerificationTests(APITestCase):
               ) 
               uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
 
-              url = reverse('verify_email',kwargs={'uidb64': uidb64, 'token' : 'This is fake token'})
+              url = reverse('verify_email', kwargs={'version': 'v1', 'uidb64': uidb64, 'token' : 'This is fake token'})
               response = self.client.get(url)
 
               user.refresh_from_db()
@@ -638,7 +638,7 @@ class TokenTests(APITestCase):
     def test_access_token_allows_request(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access}")
 
-        url = reverse("profile")
+        url = reverse("profile", kwargs={'version': 'v1'})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -646,7 +646,7 @@ class TokenTests(APITestCase):
     def test_invalid_token_denied(self):
         self.client.credentials(HTTP_AUTHORIZATION="Bearer fake.token.here")
 
-        url = reverse("profile")
+        url = reverse("profile", kwargs={'version': 'v1'})
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -663,7 +663,7 @@ class ProfileUpdateTests(APITestCase):
         refresh = RefreshToken.for_user(self.user)
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
 
-        self.url = reverse("profile")
+        self.url = reverse("profile", kwargs={'version': 'v1'})
 
     def test_update_name_successful(self):
         response = self.client.patch(self.url, {"full_name": "New Name"})

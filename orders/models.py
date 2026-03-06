@@ -51,8 +51,8 @@ class Order(models.Model):
        objects = OrderQuerySet.as_manager()
        user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
        shipping_address = models.ForeignKey(ShippingAddress,on_delete=models.SET_NULL, null=True, blank=True)#deleting an address from your profile, we don't want to delete all the historical orders sent to that address. We just keep the order but say "Address was deleted".
-       status = models.CharField(max_length=20, choices=ORDER_STATUS, default='Cart')
-       created_at = models.DateTimeField(auto_now_add=True)
+       status = models.CharField(max_length=20, choices=ORDER_STATUS, default='Cart',db_index=True)
+       created_at = models.DateTimeField(auto_now_add=True,db_index=True)
        updated_at = models.DateTimeField(auto_now=True)
        order_id = models.UUIDField(default=uuid.uuid4,editable=False, unique=True)
        total_price = models.DecimalField(max_digits=10,decimal_places=2, default=0.00)

@@ -39,7 +39,7 @@ class RegisterView(generics.CreateAPIView):# using generics for safety reasons ,
               
 class LogoutView(APIView):
        permission_classes = [IsAuthenticated]
-       def post(self,request):
+       def post(self, request, *args, **kwargs):
               try :
                      refresh_token = request.data["refresh"]
 
@@ -67,7 +67,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 class DeleteAccountView(APIView):
        permission_classes = [IsAuthenticated]
 
-       def delete(self, request):
+       def delete(self, request, *args, **kwargs):
               try:
                      user = request.user
                      user.delete()
@@ -102,7 +102,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class ActiveSessionView(APIView):
        permission_classes = [IsAuthenticated]
 
-       def get(self,request):
+       def get(self, request, *args, **kwargs):
               try:
                      tokens = OutstandingToken.objects.filter(user = request.user)   # Django will return a list contianing every single refresh token
                       
@@ -135,7 +135,7 @@ class RevokedDevicesView(APIView):
 
        permission_classes = [IsAuthenticated]
 
-       def post(self,request):
+       def post(self, request, *args, **kwargs):
               
               token_jti = request.data.get('jti')
 

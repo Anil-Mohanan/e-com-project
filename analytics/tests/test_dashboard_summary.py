@@ -14,7 +14,7 @@ User = get_user_model()
 class DashboardSummaryTests(TestCase):
        def setUp(self):
               
-              self.url = reverse('dahsboard-summary')
+              self.url = reverse('dahsboard-summary', kwargs={'version': 'v1'})
 
               self.client = APIClient()
 

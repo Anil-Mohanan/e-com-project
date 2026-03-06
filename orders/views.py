@@ -5,12 +5,15 @@ from rest_framework.decorators import action
 from django.db import transaction
 from .models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
+from product.models import Product
 from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
 from datetime import datetime
 from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response
+from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process
 import logging
+
 
 logger = logging.getLogger(__name__)
 class OrderViewSet(viewsets.ModelViewSet):
@@ -30,59 +33,53 @@ class OrderViewSet(viewsets.ModelViewSet):
 
                      
        @action(detail=False,methods =['post'])
-       def add_to_cart(self,request):
+       def add_to_cart(self, request, *args, **kwargs):
+
               product_id = request.data.get('product_id')
+
               quantity = int(request.data.get('quantity',1))
 
-              order, created = Order.objects.get_or_create_cart(request.user)
-
-              item,created = OrderItem.objects.get_or_create(
-                     order = order,
-                     product_id = product_id
+              order,item = add_to_cart_process(
+                     user=request.user,
+                     product_id=product_id,
+                     quantity=quantity,
               )
-              
-              if not created:
-                     item.quantity += quantity
-              else:
-                     item.quantity = quantity
-              item.save()
-              
-              order.save()
 
               serializer = self.get_serializer(order)
+
               cache.delete(f"user_cart_{request.user.id}")
+
               return Response(serializer.data)
        
        @action (detail=False,methods=['post'])#Update the Quantity (Set to Specific number)
-       def update_quantity(self, request):
+       def update_quantity(self, request, *args, **kwargs):
               
               product_id = request.data.get('product_id')
               quantity = int(request.data.get('quantity',1))
-              
               try:
-                     order = Order.objects.current_cart(request.user).get()
-                     item = OrderItem.objects.get(order=order, product_id = product_id)
+                     order,item = update_quantity_process(
+                            user= request.user,
+                            product_id = product_id,
+                            quantity = quantity
+                     )
               except OrderItem.DoesNotExist:
                      return Response({"error ": "Item not in Cart"},status=status.HTTP_404_NOT_FOUND)
-              if quantity < 1:
-                     item.delete()
-              else:
-                     item.quantity = quantity
-                     item.save()
-              order.save()
+
               serializer = self.get_serializer(order)
               cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
               
               # Remove Item (Delete Completely )
        @action(detail=False, methods=['post'])
-       def remove_item(self,request):
+       def remove_item(self, request, *args, **kwargs):
+
               product_id = request.data.get('product_id')#to whom . whom where requesting too for the data
+
               try:
-                     order = Order.objects.current_cart(request.user).get()
-                     item = OrderItem.objects.get(order=order, product_id= product_id)
-                     item.delete()
-                     order.save()
+                     order = remove_item_process(
+                            user = request.user,
+                            product_id = product_id,
+                     )
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
                      return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
               
@@ -91,51 +88,26 @@ class OrderViewSet(viewsets.ModelViewSet):
               return Response(serializer.data)
        
        @action(detail=False, methods=['post'])
-       def checkout(self,request):
+       def checkout(self, request, *args, **kwargs):
               serializer = self.get_serializer(data = request.data)
               
-
               address_id = request.data.get('address_id')
 
               try:
-                     with transaction.atomic():
-                            #Get the cart
-                            order = Order.objects.current_cart(request.user).get()
-                            # Get the Address
-                            address = ShippingAddress.objects.get(id = address_id, user = request.user)
-
-                            items = order.items.select_related('product')#It allows you to walk backwards from the Parent (Order) to the Children (OrderItems), even though the Parent doesn't actually store the Children's IDs.
-                            
-                            for item in items:
-                                   product = item.product
-                                   
-                                   if product.stock < item.quantity:
-                                          raise ValueError(f"Sorry,{product.name} is out of stock (Only {product.stock} left).")
-                                   product.stock -= item.quantity
-                                   product.save()
-                                   item.price_at_purchase = product.price # Saving the price now so if the changes later , the order history is correct
-                                   
-                                   item.save()
-                                   
-                            order.shipping_address = address
-                            order.status = 'Pending'
-                            order.save()
-                            try:
-                                   send_order_confirmation_email(order)
-                            except Exception as e:
-                                   print(F"Email Failed:{e}")
-
-                            return Response(self.get_serializer(order).data)
+                     order = process_checkout(user = request.user, address_id= address_id)
+                     return Response(self.get_serializer(order).data)
+                     
               except Order.DoesNotExist:
                      return Response({'error': 'Cart is empty'}, status=status.HTTP_404_NOT_FOUND)
               except ShippingAddress.DoesNotExist:
                      return Response({'error': 'Invalid Address ID'}, status=status.HTTP_404_NOT_FOUND)
               except ValueError as e:
                      return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+       
 
        @action(detail=False, methods=['get'])
        @cache_response(key_prefix="user_cart", timeout=60, user_specific=True, error_message="Unable to load your cart")
-       def cart(self,request):
+       def cart(self, request, *args, **kwargs):
               """Fethc the current user's active cart.
               if it doesn't exist, create a new one."""
               order, created = Order.objects.get_or_create_cart(request.user)
@@ -145,7 +117,7 @@ class OrderViewSet(viewsets.ModelViewSet):
        @action(detail=True, methods=['patch'])
        def update_status(self,request,order_id = None):
               """only Admin Can change the order status(e.g, Pending, shipped)"""
-              
+                     
               #Security Check: Are you Admin
               if not request.user.is_staff:
                      return Response({'error': 'Only admins Can update status'}, status=status.HTTP_403_FORBIDDEN)
@@ -155,14 +127,10 @@ class OrderViewSet(viewsets.ModelViewSet):
               if new_status not in dict(Order.ORDER_STATUS):
                      return Response({'error':'Invalid status'},status=status.HTTP_400_BAD_REQUEST)
               
-              order.status = new_status
-              order.save()
-              
-              if new_status == "Shipped":
-                     try:
-                            send_shipping_email(order)
-                     except Exception as e:
-                            print(f"Shipping email failed:{e}")
+              order = update_status_process(
+                     order = order,
+                     new_status = new_status
+              )
               
               return Response({'status': 'Order updated', 'current_status':order.status})
 
@@ -173,27 +141,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
               order = self.get_object()
               
+              
               #1. Validation: Can we actually cancel this 
               if order.status != 'Pending':
                      return Response(
-                            {'error': 'Cannot Cancel order . It might be already Shipped or deliverd'},
-                            status=status.HTTP_400_BAD_REQUEST
-                            )
-              try: 
-                     with transaction.atomic():
-                            #Resotre Stock
-                            items = order.items.select_related('product')
-                            for item in items:
-                                   product = item.product
-                                   product.stock += item.quantity# Add it back!
-                                   product.save()
-                            order.status = 'Cancelled'
-                            order.save()
-                            try:
-                                   send_cancellation_email(order)
-                            except Exception as e:
-                                   print(f"Cancellation email Failed: {e}")              
-                            return Response({'status': 'Order cancelled Successfully','new_status': 'Cancelled'})
+                            {'error': 'Cannot Cancel order . It might be already Shipped or deliverd'},status=status.HTTP_400_BAD_REQUEST)
+              try:
+                     order = cancel_order_process(
+                     order = order
+                     )
+                     return Response({'status': 'Order cancelled Successfully','new_status': 'Cancelled'})
               except Exception as e:
                      return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                      
@@ -210,14 +167,8 @@ class OrderViewSet(viewsets.ModelViewSet):
               if order.is_paid:
                      return Response({'message': 'order is already paid'})
 
-              order.is_paid= True
-              order.paid_at = datetime.now()
+              mark_as_paid_process(order=order)
               
-              #Trigger Eamil: Payment Success
-              try:
-                     send_payment_success_email(order)
-              except Exception as e:
-                     print(F"Payment email Failed:{e}")
               return Response({'status': 'Payment confirmed','isPaid': True})
        
        

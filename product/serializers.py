@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Category, Product, ProductImages, ProductVariant, Review
+from django.core.exceptions import ValidationError
 
 class  ReviewSerializer(serializers.ModelSerializer):
        user = serializers.StringRelatedField(read_only=True) # Show the user name insted of Id
@@ -15,20 +16,20 @@ class ProdcutImageSerializer(serializers.ModelSerializer):
               model = ProductImages
               fields = ['id', 'image','is_thumbnail']
 # 2. Serial
-class CategroySerializer(serializers.ModelSerializer):
+class CategorySerializer(serializers.ModelSerializer):
        class Meta:
               model = Category
-              fields = ['id','name','slug','image']
-class ProductVarinatSerializer(serializers.ModelSerializer):
+              fields = ['id','name','slug','image','required_specs_keys']
+class ProductVariantSerializer(serializers.ModelSerializer):
        class Meta:
               model = ProductVariant
-              fields = ['id','product','size','color','price_adjustment','stock','is_active']
+              fields = ['id','product','attribute_name','attribute_value','color','price_adjustment','stock','is_active']
               
 class ProductSerializer(serializers.ModelSerializer):
        #Read Only : Nested Serialzers for displaying full details in JSON
-       category = CategroySerializer(read_only = True)
+       category = CategorySerializer(read_only = True)
        images = ProdcutImageSerializer(many = True, read_only = True)
-       variants = ProductVarinatSerializer(many=True, read_only = True)
+       variants = ProductVariantSerializer(many=True, read_only = True)
        #Write Only: Fields to accept input when creating a product
        # reviews = ReviewSerializer(many=True,read_only=True)
        average_rating = serializers.SerializerMethodField()
@@ -48,6 +49,7 @@ class ProductSerializer(serializers.ModelSerializer):
                      'category_id', # Read vs Write
                      'name',
                      'slug',
+                     'brand',
                      'description',
                      'price',
                      'stock',
@@ -56,7 +58,8 @@ class ProductSerializer(serializers.ModelSerializer):
                      'uploaded_images', # Read vs Write
                      'variants',
                      'average_rating',
-                     'review_count'
+                     'review_count',
+                     'specifications',
               ]
               read_only_fields = ['slug','created_at','updated_at']
               
@@ -74,4 +77,17 @@ class ProductSerializer(serializers.ModelSerializer):
              return getattr(obj,'average_rating',0)or 0
        def get_review_count(self,obj):# Question : what is method is for
               return getattr(obj, 'review_count',0)
-       
+
+       def validate(self,attrs):
+              category = attrs.get('category')
+              specifications = attrs.get('specifications',{})
+
+              if category and category.required_specs_keys:
+
+                     for key in category.required_specs_keys:
+                            if key not in specifications:
+                                   raise serializers.ValidationError({"specifications" : f"Missing required specifications {key}"})
+              return attrs
+
+              
+              
