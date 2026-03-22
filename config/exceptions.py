@@ -23,7 +23,11 @@ def custom_exception_handler(exc,context):
        else:
               logger.exception("Unhadled Server Error ouccured")
 
-              return Response({'success':False,'error_type':exc.__class__.__name__,'details':str(exc)})
+              return Response(
+              {'success': False, 'error_type': exc.__class__.__name__, 'details': str(exc)}, 
+              status=status.HTTP_500_INTERNAL_SERVER_ERROR
+)
+
 
 
        return response

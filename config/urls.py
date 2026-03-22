@@ -20,8 +20,8 @@ urlpatterns = [
     re_path(f'{api_prefix}auth/', include('user_auth.urls')),
 
     # 2. Login URLs (The ones you thought were missing!)
-    # path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    # path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # re_path(f'{api_prefix}auth/login/$', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    # re_path(f'{api_prefix}/auth/refresh/$', TokenRefreshView.as_view(), name='token_refresh'),
 
     # 3. App URLs
     re_path(f'{api_prefix}', include('product.urls')),

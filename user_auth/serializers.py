@@ -44,8 +44,8 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
        class Meta:
               model = User       
-              fields = ['id','username', 'email', 'first_name', 'last_name']
-              read_only_fields = ['id','email']
+              fields = ['id','username', 'email', 'first_name', 'last_name','is_customer','is_seller','is_staff','date_joined']
+              read_only_fields = ['id','email','is_customer','is_seller','is_staff','date_joined']
               
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

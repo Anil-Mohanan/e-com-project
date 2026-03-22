@@ -10,11 +10,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes , force_str
-from django.core.mail import send_mail
+from .tasks import task_send_verification_email
 from django.urls import reverse
-from config.utils import error_response
+from config.utils import error_response, success_response
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from .models import UserDeviceSession
+from django.db import transaction
 
 import logging
 
@@ -30,12 +31,15 @@ class RegisterView(generics.CreateAPIView):# using generics for safety reasons ,
               
               uid = urlsafe_base64_encode(force_bytes(user.pk))  # :urlsafe_base64_encode takes the user's Primary Key (like 15) and turns it into a string (like MTU)
               token = default_token_generator.make_token(user) #default_token_generator.make_token creates a one-time-use string based on the user's password and the current time. It's the "key" that proves the link is real
+
+              version = self.kwargs.get('version','v1')
               
-              link = reverse('verify_email', kwargs={'uidb64': uid, 'token' : token})       
+              link = reverse('verify_email', kwargs={'uidb64': uid, 'token' : token, 'version' : version})       
 
               verification_url = f"http://127.0.0.1:8000{link}"
 
-              send_mail('Verify your email',f"Click here :{verification_url}",'from@example.com',[user.email])
+              transaction.on_commit(lambda:task_send_verification_email.delay(user.email,verification_url))
+              
               
 class LogoutView(APIView):
        permission_classes = [IsAuthenticated]
@@ -47,7 +51,7 @@ class LogoutView(APIView):
 
                      token.blacklist()
                      
-                     return Response({"message" : "Successfully logged Out"}, status=status.HTTP_205_RESET_CONTENT)
+                     return success_response(message = "Successfully logged Out", status_code = 205)
               except Exception as e:
                      return error_response(message="Unable to Log Out. Please Try again",status_code=400,log_message=f"Token Error in LogOutView : {e}")
               
@@ -71,7 +75,7 @@ class DeleteAccountView(APIView):
               try:
                      user = request.user
                      user.delete()
-                     return Response({"message": "Account deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+                     return success_response(message = "Account deleted successfully", status_code = 204)
               except Exception as e:
                      return error_response(message="Unable to delete Account At this Moment", status_code=401, log_message=f"Error in DeleteAccountView : {e}")
               
@@ -87,9 +91,9 @@ class VerifyEmailView(APIView):
                      if user is not None and default_token_generator. check_token(user,token):
                             user.is_email_verified = True
                             user.save()
-                            return Response({"message": "Email verified Successfully!"}, status=status.HTTP_200_OK)
+                            return success_response(message =  "Email verified Successfully!", status_code = 200)
                      else:
-                            return Response({"error": "Invalid Link"}, status=status.HTTP_400_BAD_REQUEST)
+                            return error_response(message = "Invalid Link", status_code = 400)
               except Exception as e:
                      return error_response(message="Unable to Verify Email at this moment", status_code=500, log_message=f"Error in VerifyEmailView : {e}")
 
@@ -140,13 +144,12 @@ class RevokedDevicesView(APIView):
               token_jti = request.data.get('jti')
 
               if not token_jti:
-                            return Response({"message": "JTI is Required"},status=status.HTTP_400_BAD_REQUEST)
+                            return error_response(message = "JTI is Required",status=status.HTTP_400_BAD_REQUEST)
               try:
                      token = OutstandingToken.objects.get(jti = token_jti, user = request.user) # find the OutstandingToken token using JTI
 
                      BlacklistedToken.objects.get_or_create(token = token) # Blacklisting only the specfic device session
-
-                     return Response({"message": "Logout Sucess from the device"})
+                     return success_response(message = "Logout Sucess from the device")
               except OutstandingToken.DoesNotExist:
                      return error_response(message='Session not found or already logged out', status_code=404, log_message="Error in RevokedDevicesView")
 

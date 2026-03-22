@@ -11,7 +11,7 @@ from orders.models import Order
 from .models import Payment
 from orders.emails import send_payment_success_email
 from datetime import datetime
-from config.utils import error_response
+from config.utils import error_response ,success_response
 import logging
 from django.db import transaction
 from .services import create_stripe_checkout,handle_stripe_event
@@ -35,9 +35,9 @@ class StripeCheckoutView(APIView):
                      )
                      return Response(payment)
               except Order.DoesNotExist:
-                     return Response({"error": "Order not found"},status=status.HTTP_404_NOT_FOUND)
+                     return error_response(message = "Order not found",status_code = 404)
               except ValueError as e:
-                     return Response({"error": str(e)},status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message = str(e),status_code = 404)
               except Exception as e:
                      #ERROR HANDINLING
                      #if Stripe is down, or keys are wrong, we catch the crash and tell the user.

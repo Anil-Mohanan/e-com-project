@@ -21,9 +21,10 @@ class CategorySerializer(serializers.ModelSerializer):
               model = Category
               fields = ['id','name','slug','image','required_specs_keys']
 class ProductVariantSerializer(serializers.ModelSerializer):
+       product_slug = serializers.ReadOnlyField(source = 'product.slug')
        class Meta:
               model = ProductVariant
-              fields = ['id','product','attribute_name','attribute_value','color','price_adjustment','stock','is_active']
+              fields = ['id','product','product_slug','attribute_name','attribute_value','color','price_adjustment','stock','is_active']
               
 class ProductSerializer(serializers.ModelSerializer):
        #Read Only : Nested Serialzers for displaying full details in JSON

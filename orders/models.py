@@ -5,6 +5,7 @@ from decimal import Decimal
 import uuid
 from django.dispatch import receiver
 from django.db.models.signals import post_delete, post_save
+from django.db.models import Sum
 
 # Create your models here.
          
@@ -28,9 +29,9 @@ class ShippingAddress(models.Model):
 class OrderQuerySet(models.QuerySet):
        
        def valid_sales(self):
-              return self.exclude(status__in = ["Cart", "Cancelled"])
+              return self.exclude(status__in = ["Cart", "Cancelled","Pending"])
 
-       def for_user(self):
+       def for_user(self,user):
               return self.filter(user = user)
 
        def current_cart(self,user):
@@ -44,6 +45,7 @@ class Order(models.Model):
        ORDER_STATUS = (
               ('Cart', 'Cart'),
               ('Pending', 'Pending'),
+              ('OrderConfirmed','OrderConfirmed'),
               ('Shipped', 'Shipped'),
               ('Delivered', 'Delivered'),
               ('Cancelled', 'Cancelled'),

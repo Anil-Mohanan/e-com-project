@@ -10,7 +10,7 @@ from .emails import send_order_confirmation_email, send_shipping_email, send_can
 from datetime import datetime
 from django.core.cache import cache
 from config.cache_utils import cache_response
-from config.utils import error_response
+from config.utils import error_response,success_response
 from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process
 import logging
 
@@ -29,7 +29,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               user = self.request.user
               if user.is_staff:# checks if the user is Admin / Staff
                      return queryset.order_by('-created_at')
-              return queryset.for_user(user).order_by('-created_at') # ensuring that the loged in user only sees only his orders
+              return queryset.for_user(user).exclude(status = 'Pending').order_by('-created_at') # ensuring that the loged in user only sees only his orders
 
                      
        @action(detail=False,methods =['post'])
@@ -63,7 +63,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                             quantity = quantity
                      )
               except OrderItem.DoesNotExist:
-                     return Response({"error ": "Item not in Cart"},status=status.HTTP_404_NOT_FOUND)
+                     return error_response(message = "Item not in Cart",status_code = 404)
 
               serializer = self.get_serializer(order)
               cache.delete(f"user_cart_{request.user.id}")
@@ -81,7 +81,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                             product_id = product_id,
                      )
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
-                     return Response({'error': 'Item not found'}, status=status.HTTP_404_NOT_FOUND)
+                     return error_response(message = 'Item  Not Found', status_code = 404)
               
               serializer = self.get_serializer(order)# in this line what is get_serializer and what is order 
               cache.delete(f"user_cart_{request.user.id}")
@@ -98,11 +98,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return Response(self.get_serializer(order).data)
                      
               except Order.DoesNotExist:
-                     return Response({'error': 'Cart is empty'}, status=status.HTTP_404_NOT_FOUND)
+                     return error_response(message =  'Cart is empty', status_code = 404)
               except ShippingAddress.DoesNotExist:
-                     return Response({'error': 'Invalid Address ID'}, status=status.HTTP_404_NOT_FOUND)
+                     return error_response(message = 'Invalid Address ID', status_code = 404)
               except ValueError as e:
-                     return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message = str(e), status_code = 400)
        
 
        @action(detail=False, methods=['get'])
@@ -120,19 +120,19 @@ class OrderViewSet(viewsets.ModelViewSet):
                      
               #Security Check: Are you Admin
               if not request.user.is_staff:
-                     return Response({'error': 'Only admins Can update status'}, status=status.HTTP_403_FORBIDDEN)
+                     return error_response(message = "only admin can update the status", status_code = 400)
               order = self.get_object()
               new_status = request.data.get('status')
 
               if new_status not in dict(Order.ORDER_STATUS):
-                     return Response({'error':'Invalid status'},status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message = "Invalid Status",status_code = 400)
               
               order = update_status_process(
                      order = order,
                      new_status = new_status
               )
               
-              return Response({'status': 'Order updated', 'current_status':order.status})
+              return success_response(message = "Order updated Successfully",data ={'current_status':order.status})
 
        @action(detail=True, methods=['post'])
        def cancel_order(self,request,order_id = None):
@@ -144,32 +144,31 @@ class OrderViewSet(viewsets.ModelViewSet):
               
               #1. Validation: Can we actually cancel this 
               if order.status != 'Pending':
-                     return Response(
-                            {'error': 'Cannot Cancel order . It might be already Shipped or deliverd'},status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message="Cannot Cancel order. It might be already Shipped or deliverd",status_code=400)
               try:
                      order = cancel_order_process(
                      order = order
                      )
-                     return Response({'status': 'Order cancelled Successfully','new_status': 'Cancelled'})
+                     return success_response(message="Order cancelled Successfully",data={'new_status': 'cancelled'},status_code=200)
               except Exception as e:
-                     return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                     return error_response(message =  str(e), status_code = 500)
                      
        @action(detail=True, methods=['patch'])
        def mark_as_paid(self,request, order_id =None):
               """Manal Pay by the Admin to Mark an order is paid Use full of COD"""
               
               if not request.user.is_staff:
-                     return Response({'error': 'Admins Only'}, status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message="Only Admin Can change the status",status_code=400) 
 
               order = self.get_object()
               
               #check if already paid
               if order.is_paid:
-                     return Response({'message': 'order is already paid'})
+                     return success_response(message="Order is already Paid")
 
               mark_as_paid_process(order=order)
               
-              return Response({'status': 'Payment confirmed','isPaid': True})
+              return success_response(message = "Payment confirmed",data ={'isPaid': True})
        
        
        

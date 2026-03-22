@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv 
 import environ
-
+from celery.schedules import crontab
 
 load_dotenv() 
 
@@ -65,6 +65,7 @@ MIDDLEWARE = [
     'config.middleware.ReqeustTimeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -110,10 +111,10 @@ DATABASES = {
 }
 CACHES = {
     "default": {
-        # "BACKEND": "django_redis.cache.RedisCache",
+        "BACKEND": "django_redis.cache.RedisCache",
         
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        # "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "redis://127.0.0.1:6379/2",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -295,3 +296,36 @@ AUTHENTICATION_BACKENDS = [
 #     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {}
 
 # BANNED_IPS = ['127.0.0.1'] this is used to work the IP block MIDDLEWARE
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# CELERY CONFIGURATION
+# ------------------------------------------------------------------------------
+# The 'broker' is where Django sends tasks to wait in line. 0 is the Redis database number.
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+
+# The 'backend' is where Celery stores the result of a task after it finishes. 
+# We use database 1 so it doesn't mix with the incoming tasks.
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'
+
+# Security: We only want to accept tasks serialized as JSON.
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+# Keep Celery in sync with your Django timezone
+CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_BEAT_SCHEDULE = {
+        'precompute-dashboard-every-15-minutes': {
+        'task': 'analytics.tasks.precompute_dashboard_statistics',
+        'schedule': crontab(minute='*/15'),  # Runs every 15 minutes
+    },
+    'repair-orders-every-5-minutes': {
+        'task': 'orders.tasks.task_release_unpaid_orders',
+        'schedule': crontab(minute='*/5'),  # Runs every 5 minutes
+    },
+}

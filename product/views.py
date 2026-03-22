@@ -10,7 +10,7 @@ from orders.models import Order, OrderItem
 from rest_framework.decorators import action
 from django.db.models import Avg, Count
 from django.core.cache import cache
-from config.utils import error_response
+from config.utils import error_response, success_response
 from config.cache_utils import cache_response
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from .services import add_review_process, build_comparison_matrix
@@ -85,10 +85,8 @@ class ProductViewSet(viewsets.ModelViewSet):
              
               #check if the user already reviewd
               if product.reviews.filter(user=user).exists():
-                     return Response(
-                           {'error': 'You have already reviewd this product'},
-                           status= status.HTTP_400_BAD_REQUEST
-                     )
+                     return error_response(message="You have already reviewd this Product", status_code=400)
+       
                      # 2 verfication : did the buy it?
                      # checking if and orders exist in that is delvered (or any stauts for now)
                      had_bought = OrderItem.objects.filter(
@@ -97,8 +95,8 @@ class ProductViewSet(viewsets.ModelViewSet):
                      ).exists()
                      if not had_bought:
                            return Response(
-                                  {'error': 'You can only reiview products you have purchased.'},
-                                  status=status.HTTP_403_FORBIDDEN
+                                  messages =  'You can only reiview products you have purchased.',
+                                  status_code = 400
                            )
               review = add_review_process(
                      product = product,
@@ -107,7 +105,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                      comment = data.get('comment','')
               )
               if review:                  
-                     return Response({'Message': 'Review added Successfully'}, status=status.HTTP_201_CREATED)
+                     return success_response(message="Review added Successfully", status_code=201)
 
              
        @cache_response(key_prefix="product_list",error_message="Unable to Load Products")
@@ -128,14 +126,14 @@ class ProductViewSet(viewsets.ModelViewSet):
               products_ids_string = request.query_params.get('ids')
 
               if not products_ids_string:
-                     return Response({'error': 'Please provide product IDs to compare using ?ids =...'},status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message = 'Please provide product IDs to compare using ?ids =...',status_code = 400)
 
               try:
                      comparsion_matrix = build_comparison_matrix(product_ids_string)
                      
-                     return Response(comparsion_matrix,status=status.HTTP_200_OK)
+                     return success_response(message ="Comparsion Successfull",status_code = 200,data=comparsion_matrix)
               except ValueError as e:
-                     return Response({"error": str(e)},status=status.HTTP_400_BAD_REQUEST)
+                     return error_response(message = str(e),status_code= 400)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

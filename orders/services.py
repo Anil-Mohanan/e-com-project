@@ -1,8 +1,16 @@
 from .models import ShippingAddress, Order, OrderItem
 from product.models import Product , ProductVariant, Category, InventoryUnit
 from django.db import transaction
-from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
+from .tasks import (
+       task_send_payment_success_email,
+       task_send_order_confirmation_email,
+       task_send_shipping_email,
+       task_cancellation_email
+)
 from datetime import datetime
+import logging
+
+logger = logging.getLogger('orders')
 
 def process_checkout(user,address_id):
        with transaction.atomic():
@@ -18,13 +26,14 @@ def process_checkout(user,address_id):
               
               for item in items:
                      product = locked_products_dict[item.product_id]
-                     avalible_units = InventoryUnit.objects.select_for_update(product = product, status = 'In Stock')[:item.quantity] # why we have to use select_for_update() here and are we adding item.quality to the end of the string
-                     if product.stock < item.quantity:
-                            raise ValueError(f"Sorry,{product.name} is out of stock (Only {product.stock} left).")
-                     for unit in avalible_units:
+                     available_units = list(InventoryUnit.objects.select_for_update().filter(product=product,status="In Stock")[:item.quantity]) # 1. Going into the warehouse to look for physical boxes
+                     if len(available_units) < item.quantity:
+                            raise ValueError(f"Sorry, {product.name} is out of stock. (Database mismatch: missing physical inventory units).")
+                     for unit in available_units:
                             unit.status = 'Sold'
-                            unit.save()
-                     item.inventory_units.set(avalible_units)# what is this for 
+
+                     InventoryUnit.objects.bulk_update(available_units,['status'])
+                     item.inventory_units.set(avalible_units)
                      product.stock -= item.quantity
                      product.save()
                      item.price_at_purchase = product.price # Saving the price now so if the changes later , the order history is correct
@@ -34,53 +43,53 @@ def process_checkout(user,address_id):
               order.shipping_address = address
               order.status = 'Pending'
               order.save()
-              try:
-                     send_order_confirmation_email(order)
-              except Exception as e:
-                     print(F"Email Failed:{e}")
-              
+              logger.info(f"Order {order.order_id} successfully processed for user {user.id}")
 
+              transaction.on_commit(lambda:task_send_payment_success_email.delay(order.order_id)) # using on_commit will stop the task to send to celery until db transaction is full commited
+              
        return order
 
 def add_to_cart_process(user,product_id,quantity):
-       order, order_created = Order.objects.get_or_create_cart(user)
+       with transaction.atomic():
+              order, order_created = Order.objects.get_or_create_cart(user)
 
-       item, itme_created = OrderItem.objects.get_or_create(
-              order = order,
-              product_id = product_id
-       )
-       
-       if not  itme_created:
-              item.quantity += quantity
-       else:
-              item.quantity = quantity
-       item.save()
-       
-       order.save()
-       
-       return order,item
+              item, itme_created = OrderItem.objects.get_or_create(
+                     order = order,
+                     product_id = product_id
+              )
+
+              if not  itme_created:
+                     item.quantity += quantity
+              else:
+                     item.quantity = quantity
+              item.save()
+
+              order.save()
+
+              return order,item
               
 def update_quantity_process(user,product_id,quantity):
+       with transaction.atomic():
+              order = Order.objects.current_cart(user).get()
+              item = OrderItem.objects.get(order=order, product_id = product_id)
 
-       order = Order.objects.current_cart(user).get()
-       item = OrderItem.objects.get(order=order, product_id = product_id)
-       
-       if quantity < 1:     
-              item.delete()
-       else:
-              item.quantity = quantity
-              item.save()
-       order.save()
+              if quantity < 1:     
+                     item.delete()
+              else:
+                     item.quantity = quantity
+                     item.save()
+              order.save()
 
-       return order, item
+              return order, item
 
 def remove_item_process(user,product_id):
-       order = Order.objects.current_cart(user).get()
-       item = OrderItem.objects.get(order=order, product_id= product_id)
-       item.delete()
-       order.save()
+       with transaction.atomic():
+              order = Order.objects.current_cart(user).get()
+              item = OrderItem.objects.get(order=order, product_id= product_id)
+              item.delete()
+              order.save()
 
-       return order
+              return order
 
 def update_status_process(order,new_status):
 
@@ -88,11 +97,7 @@ def update_status_process(order,new_status):
        order.save()
               
        if new_status == "Shipped":
-              try:
-                     send_shipping_email(order)
-              except Exception as e:
-                     print(f"Shipping email failed:{e}")
-       
+             task_send_shipping_email.delay(order.order_id)
        return order
 
 def cancel_order_process(order):
@@ -109,20 +114,22 @@ def cancel_order_process(order):
                             product.save()
                      order.status = 'Cancelled'
                      order.save()
-                     try:
-                            send_cancellation_email(order)
-                     except Exception as e:
-                            print(f"Cancellation email Failed: {e}")
+                     logger.info(f"Order {order.order_id} was cancelled successfully. Stock restored.")
+
+                     transaction.on_commit(lambda: task_cancellation_email.delay(order.order_id))
+
 
               return order
 
 def mark_as_paid_process(order):
        order.is_paid= True
        order.paid_at = datetime.now()
+       order.save()
+
+       logger.info(f"Admin marked Order {order.order_id} as paid manually.")
        
        #Trigger Eamil: Payment Success
-       try:
-              send_payment_success_email(order)
-       except Exception as e:
-              print(F"Payment email Failed:{e}")
+       
+       task_send_payment_success_email.delay(order.order_id)
+
        return order

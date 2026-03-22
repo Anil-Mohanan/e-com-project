@@ -1,5 +1,10 @@
 from .models import Product, ProductImages, ProductVariant, Category, Review, InventoryUnit
 
+import logging
+
+logger = logging.getLogger('product')
+
+
 
 def add_review_process(product,user,rating,comment):
        reveiw = Review.objects.create(
@@ -8,6 +13,8 @@ def add_review_process(product,user,rating,comment):
                      rating= rating,
                      comment = comment
               )
+       logger.info(f"User {user.id} added a {rating}-star review to product {product.id}")
+
        return reveiw
 
 def build_comparison_matrix(product_ids_string):
@@ -48,5 +55,7 @@ def build_comparison_matrix(product_ids_string):
                             comparsion_data['specifications'][spec_key] = {}
 
                      comparsion_data['specifications'][spec_key][prod.id] = spec_value
+                     
+       logger.info(f"Successfully build comparsion matrix for {len(len_list)} products: {id_list}")
 
        return comparsion_data

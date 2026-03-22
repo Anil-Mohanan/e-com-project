@@ -1,7 +1,7 @@
 import stripe # The official library provided by Stripe to talk to their servers
 from django.conf import settings # to access the keys in settings.py
 from orders.models import Order
-from orders.emails import send_payment_success_email
+from orders.tasks import task_send_payment_success_email
 from datetime import datetime
 from django.db import transaction
 from .models import Payment
@@ -37,7 +37,8 @@ def create_stripe_checkout(user,order_id):
                      # attaching data to the payment so we can find it int he strpe dashboard
                      'order_id': str(order.order_id),
                      'user_email': user.email
-              }
+              },
+              idempotency_key = f"intent_{order.order_id}"
        )
        
        # SAVE RECORED INTO DB
@@ -54,8 +55,7 @@ def create_stripe_checkout(user,order_id):
        # SEND THE KEYS TO FRONTEND
        # sending the two keys to the react:
        # client_secret: the unique key for this transaction 
-       # stripe_public_key : the generic key to show the payment form.
-       
+       # stripe_public_key : the generic key to show the payment form.       
        return {
               'client_secret' : intent['client_secret'],
               'stripe_public_key' : settings.STRIPE_PUBLIC_KEY
@@ -78,14 +78,13 @@ def handle_stripe_event(event):
                                    payment.save()
                             #Step A2 Mark order As pending
                             order = Order.objects.get(order_id = order_id)
-                            order.status = 'Pending'
+                            order.status = 'OrderConfirmed'
                             order.is_paid = True
                             order.paid_at = datetime.now()
                             order.save()
-                     try:
-                            send_payment_success_email(order)
-                     except Exception as e:
-                            logger.error(f"Failed to send email for Order {order_id}: {e}")
+
+                            transaction.on_commit(lambda: task_send_payment_success_email(order.order_id))
+
               except Payment.DoesNotExist:
                      logger.warning(f"Payment record missing for transaction {transaction_id}, but stripe,succeeded")
               
