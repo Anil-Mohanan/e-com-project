@@ -114,7 +114,7 @@ CACHES = {
         "BACKEND": "django_redis.cache.RedisCache",
         
         # "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "redis://127.0.0.1:6379/2",
+        "LOCATION": "redis://redis:6379/2",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -155,6 +155,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 AUTH_USER_MODEL = 'user_auth.User'
 
@@ -306,11 +307,11 @@ CORS_ALLOWED_ORIGINS = [
 # ------------------------------------------------------------------------------
 # The 'broker' is where Django sends tasks to wait in line. 0 is the Redis database number.
 
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = 'redis://redis:6379/0'
 
 # The 'backend' is where Celery stores the result of a task after it finishes. 
 # We use database 1 so it doesn't mix with the incoming tasks.
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'
+CELERY_RESULT_BACKEND = 'redis://redis:6379/1'
 
 # Security: We only want to accept tasks serialized as JSON.
 CELERY_ACCEPT_CONTENT = ['json']
