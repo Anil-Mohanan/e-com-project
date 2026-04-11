@@ -9,6 +9,9 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
+from django.conf.global_settings import CSRF_COOKIE_SAMESITE
+from django.conf.global_settings import CSRF_COOKIE_HTTPONLY
+from django.conf.global_settings import SESSION_COOKIE_HTTPONLY
 import os
 from pathlib import Path
 from dotenv import load_dotenv 
@@ -30,7 +33,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG') == 'True'
 
-ALLOWED_HOSTS =  [] # ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost 127.0.0.1').split(' ')
 
 
 # Application definition
@@ -136,6 +139,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },   
+]
+
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.ScryptPasswordHasher',
 ]
 
 
@@ -330,3 +341,10 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/5'),  # Runs every 5 minutes
     },
 }
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+# WARNING: Set these to True ONLY when you deploy to a live HTTPS server.
+# SESSION_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True

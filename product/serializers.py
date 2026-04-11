@@ -9,6 +9,11 @@ class  ReviewSerializer(serializers.ModelSerializer):
               model = Review
               fields = ['id','user','rating', 'comment', 'created_at']
 
+       def validate_comment(self,value):
+              if  "<" in value or ">" in value:
+                     raise serializers.ValidationError("Comments Cannot contain HTML Tags.")
+              return value
+
 #1. Serializer for Images (TO handle mutlipel uploads)
 
 class ProdcutImageSerializer(serializers.ModelSerializer):

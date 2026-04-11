@@ -129,7 +129,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                      return error_response(message = 'Please provide product IDs to compare using ?ids =...',status_code = 400)
 
               try:
-                     comparsion_matrix = build_comparison_matrix(product_ids_string)
+                     comparsion_matrix = build_comparison_matrix(products_ids_string)
                      
                      return success_response(message ="Comparsion Successfull",status_code = 200,data=comparsion_matrix)
               except ValueError as e:
@@ -149,7 +149,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
               if self.request.method in permissions.SAFE_METHODS:
                      return [permissions.AllowAny()]
               else:
-                     return [IsSellerOrAdmin()]
+                     return [permissions.IsAdminUser()]
 
        @cache_response(key_prefix="category_list",error_message="Unable to Fetch Categories at this time")
        def list(self,request,*args, **kwargs):

@@ -29,7 +29,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               user = self.request.user
               if user.is_staff:# checks if the user is Admin / Staff
                      return queryset.order_by('-created_at')
-              return queryset.for_user(user).exclude(status = 'Pending').order_by('-created_at') # ensuring that the loged in user only sees only his orders
+              return queryset.for_user(user).exclude(status = 'Cart').order_by('-created_at') # ensuring that the loged in user only sees only his orders
 
                      
        @action(detail=False,methods =['post'])
@@ -143,7 +143,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               
               
               #1. Validation: Can we actually cancel this 
-              if order.status != 'Pending':
+              if order.status not in ['Pending','OrderConfirmed']:
                      return error_response(message="Cannot Cancel order. It might be already Shipped or deliverd",status_code=400)
               try:
                      order = cancel_order_process(

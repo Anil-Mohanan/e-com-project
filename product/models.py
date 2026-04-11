@@ -38,6 +38,7 @@ class Product(models.Model):
        created_at = models.DateTimeField(auto_now_add=True)
        updated_at = models.DateTimeField(auto_now=True)
        specifications = models.JSONField(default=dict, blank= True)
+       seller = models.ForeignKey(User,on_delete=models.CASCADE,null=True,blank=True)
 
 
        def save(self,*args,**kwargs):
@@ -69,9 +70,9 @@ class ProductImages(models.Model):
                      img = img.convert('RGB') # Converting to RGB (Crusial for JPEG/Webp compatibilty)
 
                      if img.width > 800 or img.height > 800:
-                            img.thumbnail(MAX_IMAGE_SIZE)
+                            img.thumbnail(self.MAX_IMAGE_SIZE)
                      output = io.BytesIO() # Save to a Memory buffer
-                     img.save(output,format='JPEG',quality = JPEG_QUALITY)
+                     img.save(output,format='JPEG',quality = self.JPEG_QUALITY)
                      output.seek(0)
                      self.image = ContentFile(output.getvalue(), name=self.image.name)
                      super().save(*args, **kwargs)

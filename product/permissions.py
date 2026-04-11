@@ -10,13 +10,22 @@ class IsSellerOrAdmin(permissions.BasePermission):
        def has_object_permission(self, request, view, obj):
               #Allow anyone to View
               if request.method in permissions.SAFE_METHODS:
-                     return True
-              
+                     return True       
               #Admins can do anything
               if request.user.is_superuser:
                      return True
+              is_seller = getattr(request.user,'is_seller',False)       
+              if not is_seller:
+                     return False
               
-              return getattr(request.user, 'is_seller',False)
+              if hasattr(obj,'seller'): # Dynamic Ownership RBAC Routing
+                     # It's a Product
+                     return obj.seller == request.user
+              elif hasattr(obj,'product') and hasattr(obj.product,'seller'):
+
+                     return obj.product.seller == request.user
+
+              return False
        
 class IsReviewAuthorOrReadOnly(permissions.BasePermission):
        """Object-level permission to only allow owners of a review to edit/delete it."""
