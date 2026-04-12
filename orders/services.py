@@ -8,46 +8,48 @@ from .tasks import (
        task_cancellation_email
 )
 from datetime import datetime
+from django.core.cache import cache
 import logging
 
 logger = logging.getLogger('orders')
 
+
+
 def process_checkout(user,address_id):
-       with transaction.atomic():
-              #Get the cart
-              order = Order.objects.current_cart(user).get()
-              # Get the Address
-              address = ShippingAddress.objects.get(id = address_id, user = user)
-              product_ids = order.items.values_list('product_id',flat = True) # this line just grabs a list of the pure Database IDs for every product sitting in the user's cart (e.g., [15, 6, 42]).
-              products = Product.objects.select_for_update().filter(id__in = product_ids).order_by('id')#.filter(id__in=product_ids) tells the database to get only the products in the cart.
-              locked_products_dict = {p.id: p for p in products}
-              
-              items = order.items.all()
-              
-              for item in items:
-                     product = locked_products_dict[item.product_id]
-                     available_units = list(InventoryUnit.objects.select_for_update().filter(product=product,status="In Stock")[:item.quantity]) # 1. Going into the warehouse to look for physical boxes
-                     if len(available_units) < item.quantity:
-                            raise ValueError(f"Sorry, {product.name} is out of stock. (Database mismatch: missing physical inventory units).")
-                     for unit in available_units:
-                            unit.status = 'Sold'
-
-                     InventoryUnit.objects.bulk_update(available_units,['status'])
-                     item.inventory_units.set(avalible_units)
-                     product.stock -= item.quantity
-                     product.save()
-                     item.price_at_purchase = product.price # Saving the price now so if the changes later , the order history is correct
-                     
-                     item.save()
-                     
-              order.shipping_address = address
-              order.status = 'Pending'
-              order.save()
-              logger.info(f"Order {order.order_id} successfully processed for user {user.id}")
-
-              transaction.on_commit(lambda:task_send_payment_success_email.delay(order.order_id)) # using on_commit will stop the task to send to celery until db transaction is full commited
-              
-       return order
+       lock_key = f"checkout_lock_{user.id}"
+       if not cache.add(lock_key,"locked",timeout=15):
+              raise ValueError("Checkout already in progress. Please wait.")
+       try:
+              with transaction.atomic():
+                     #Get the cart
+                     order = Order.objects.current_cart(user).get()
+                     # Get the Address
+                     address = ShippingAddress.objects.get(id = address_id, user = user)
+                     product_ids = order.items.values_list('product_id',flat = True) # this line just grabs a list of the pure Database IDs for every product sitting in the user's cart (e.g., [15, 6, 42]).
+                     products = Product.objects.select_for_update().filter(id__in = product_ids).order_by('id')#.filter(id__in=product_ids) tells the database to get only the products in the cart.
+                     locked_products_dict = {p.id: p for p in products}
+                     items = order.items.all()
+                     for item in items:
+                            product = locked_products_dict[item.product_id]
+                            available_units = list(InventoryUnit.objects.select_for_update().filter(product=product,status="In Stock")[:item.quantity]) # 1. Going into the warehouse to look for physical boxes
+                            if len(available_units) < item.quantity:
+                                   raise ValueError(f"Sorry, {product.name} is out of stock. (Database mismatch: missing physical inventory units).")
+                            for unit in available_units:
+                                   unit.status = 'Sold'
+                            InventoryUnit.objects.bulk_update(available_units,['status'])
+                            item.inventory_units.set(available_units)
+                            product.stock -= item.quantity
+                            product.save()
+                            item.price_at_purchase = product.price # Saving the price now so if the changes later , the order history is correct
+                            item.save()
+                     order.shipping_address = address
+                     order.status = 'Pending'
+                     order.save()
+                     logger.info(f"Order {order.order_id} successfully processed for user {user.id}")
+                     transaction.on_commit(lambda:task_send_payment_success_email.delay(order.order_id)) # using on_commit will stop the task to send to celery until db transaction is full commited
+              return order
+       finally:
+              cache.delete(lock_key)
 
 def add_to_cart_process(user,product_id,quantity):
        with transaction.atomic():

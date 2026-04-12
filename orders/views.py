@@ -1,3 +1,4 @@
+from rest_framework.decorators import throttle_classes
 from django.shortcuts import render
 from rest_framework import viewsets , permissions, status
 from rest_framework.response import Response
@@ -12,10 +13,14 @@ from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response,success_response
 from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process
+from rest_framework.throttling  import UserRateThrottle
 import logging
 
 
 logger = logging.getLogger(__name__)
+class CheckoutThrottle(UserRateThrottle):
+       rate = '2/minute'
+
 class OrderViewSet(viewsets.ModelViewSet):
        serializer_class = OrderSerializer
        permission_classes = [permissions.IsAuthenticated]# need to login
@@ -87,7 +92,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
        
-       @action(detail=False, methods=['post'])
+       @action(detail=False, methods=['post'],throttle_classes = [CheckoutThrottle])
        def checkout(self, request, *args, **kwargs):
               serializer = self.get_serializer(data = request.data)
               

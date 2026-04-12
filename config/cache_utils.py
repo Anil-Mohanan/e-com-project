@@ -16,6 +16,10 @@ def cache_response(key_prefix,timeout = 900, error_message = "Service temporaril
                      identifier = "_".join(str(v)for v in kwargs.values())
 
                      cache_key = key_prefix
+                     version = cache.get(f"{key_prefix}_version")
+                     if version:
+                            cache_key += f"_v{version}"
+                            
                      if user_specific and request.user.is_authenticated:
                             cache_key += f"_user_{request.user.id}"
                      if identifier:
