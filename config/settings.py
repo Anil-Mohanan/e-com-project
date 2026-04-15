@@ -342,6 +342,14 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'orders.tasks.task_release_unpaid_orders',
         'schedule': crontab(minute='*/5'),  # Runs every 5 minutes
     },
+    'sweep-outbox-every-5-seconds':{
+        'task': 'orders.tasks.sweep_order_outbox',
+        'schedule': 5.0, 
+    },
+    'sweep-payment-outbox-every-5-seconds':{
+        'task': 'payments.tasks.sweeper_payment_outbox',
+        'schedule': 5.0,
+    }
 }
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True

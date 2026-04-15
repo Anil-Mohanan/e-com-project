@@ -1,19 +1,18 @@
 from django.shortcuts import render
 from rest_framework import viewsets, permissions, parsers,filters,status
 from rest_framework.response import Response
-from .models import Product , Category, ProductVariant, Review
+from .models import Product , Category, ProductVariant, Review , ProductPurchaseHistory
 from .serializers import ProductSerializer, CategorySerializer, ProductVariantSerializer, ReviewSerializer
 from .permissions import IsSellerOrAdmin, IsReviewAuthorOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
-from orders.models import Order, OrderItem 
 from rest_framework.decorators import action
 from django.db.models import Avg, Count
-from django.core.cache import cache
 from config.utils import error_response, success_response
 from config.cache_utils import cache_response
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from .services import add_review_process, build_comparison_matrix
+from .search_services import fast_search_catalog
 import logging
 
 
@@ -89,10 +88,7 @@ class ProductViewSet(viewsets.ModelViewSet):
        
                      # 2 verfication : did the buy it?
                      # checking if and orders exist in that is delvered (or any stauts for now)
-                     had_bought = OrderItem.objects.filter(
-                           order__user = user,
-                           product = product
-                     ).exists()
+                     had_bought = ProductPurchaseHistory.objects.filter(user_id = user.id,product = product).exists()
                      if not had_bought:
                            return Response(
                                   messages =  'You can only reiview products you have purchased.',
@@ -135,6 +131,12 @@ class ProductViewSet(viewsets.ModelViewSet):
               except ValueError as e:
                      return error_response(message = str(e),status_code= 400)
 
+       @action(detail = False, methods =['get'],permission_classes = [permissions.AllowAny])
+       def instant_search(self,request,*args,**kwargs):
+              search_term = request.query_params.get('q','')
+              results = fast_search_catalog(search_term)
+
+              return success_response(message='Search complete', status_code=200,data=results)
 
 class CategoryViewSet(viewsets.ModelViewSet):
        

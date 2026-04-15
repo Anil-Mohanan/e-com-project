@@ -3,12 +3,8 @@ from django.shortcuts import render
 from rest_framework import viewsets , permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from django.db import transaction
 from .models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
-from product.models import Product
-from .emails import send_order_confirmation_email, send_shipping_email, send_cancellation_email,send_payment_success_email
-from datetime import datetime
 from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response,success_response
@@ -30,7 +26,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               """Custom Login:
               -Admin: sees all the orders(the Dashboard)
               -Customer : sees only their own orders(Order History)."""
-              queryset = Order.objects.select_related('user').prefetch_related('items__product__images')
+              queryset = Order.objects.select_related('user').prefetch_related('items')
               user = self.request.user
               if user.is_staff:# checks if the user is Admin / Staff
                      return queryset.order_by('-created_at')

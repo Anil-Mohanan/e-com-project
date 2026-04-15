@@ -7,15 +7,11 @@ from django.shortcuts import get_object_or_404 # A helper to get the data or err
 from django.http import HttpResponse # Standard Django response(not REST frame work) becasue Stripe expects a simple HTTP
 from django.views.decorators.csrf import csrf_exempt # To disable seccurity ceck for this specific ulr
 from django.utils.decorators import method_decorator # To apply the csrf_exempt decoratero to a class view
-from orders.models import Order
-from .models import Payment
-from orders.emails import send_payment_success_email
-from datetime import datetime
 from config.utils import error_response ,success_response
 import logging
 from django.db import transaction
 from .services import create_stripe_checkout,handle_stripe_event
-
+from .tasks import process_stripe_webhook_task
 stripe.api_key = settings.STRIPE_SECRET_KEY# verfining the Stripe keys 
 
 logger = logging.getLogger(__name__)
@@ -34,8 +30,6 @@ class StripeCheckoutView(APIView):
                             order_id= order_id
                      )
                      return Response(payment)
-              except Order.DoesNotExist:
-                     return error_response(message = "Order not found",status_code = 404)
               except ValueError as e:
                      return error_response(message = str(e),status_code = 404)
               except Exception as e:
@@ -86,6 +80,6 @@ class StripeWebhookView(APIView):
                      return HttpResponse(status=400)
               
               # 5 Handle The Event
-              handle_stripe_event(event)
+              process_stripe_webhook_task.delay(event)
               return HttpResponse(status= 200)
               

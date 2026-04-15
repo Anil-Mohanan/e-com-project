@@ -1,5 +1,4 @@
 from django.db import models
-from orders.models import Order
 from django.conf import settings
 
 # Create your models here.
@@ -14,7 +13,7 @@ class Payment(models.Model):
               ('Failed', 'Failed'),
        )
        # Link to the Order (One Payment per Order)
-       order = models.OneToOneField(Order,on_delete=models.CASCADE, related_name='payment')
+       order_id = models.UUIDField(db_index = True,unique= True)
        # Store the ID from the GateWay 
        transaction_id = models.CharField(max_length=100, unique=True, blank=True, null=True)
 
@@ -26,6 +25,12 @@ class Payment(models.Model):
 
        def __str__(self):
               return f"{self.payment_method} - {self.amount} - {self.status}"
+       
+class PaymentEventOutbox(models.Model):
 
-              
-
+       event_type = models.CharField(max_length = 255)
+       payload = models.JSONField(default = dict)
+       created_at = models.DateTimeField(auto_now_add=True)
+       processed = models.BooleanField(default= False, db_index=True)
+       processed_at = models.DateTimeField(null = True,blank= True)
+       error_message = models.TextField(null = True, blank=True)

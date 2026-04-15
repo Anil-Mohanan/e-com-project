@@ -1,6 +1,6 @@
+from email.policy import default
 from django.db import models
 from django.conf import settings
-from product.models import Product
 from decimal import Decimal
 import uuid
 from django.dispatch import receiver
@@ -96,29 +96,24 @@ class OrderItemQuerySet(models.QuerySet):
        def top_selling(self,limit=5):
               return self.values('product__name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
        
-       
-
-
-
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product_id = models.IntegerField(db_index=True)
+    product_name = models.CharField(max_length=255)
     quantity = models.PositiveIntegerField(default=1)
     
     # We keep this blank allowed, because while in 'Cart', it might be empty
     price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name}"
+        return f"{self.quantity} x {self.product_name}"
 
     @property
     def total_price(self):
         # CRITICAL LOGIC FIX:
         # If the price is locked (Order is placed), use that.
         # If the price is NOT locked (Still in Cart), use the LIVE product price.
-        if self.price_at_purchase:
-            return self.price_at_purchase * self.quantity
-        return self.product.price * self.quantity 
+       return (self.price_at_purchase or 0) * self.quantity
 @receiver(post_save, sender=  OrderItem)
 @receiver(post_delete, sender=OrderItem)
 def update_order_total(sender,instance, **kwargs):
@@ -128,3 +123,14 @@ def update_order_total(sender,instance, **kwargs):
     """
        instance.order.save()
     
+
+class OrderEventOutbox(models.Model): # Event Box that store the Even in SQL in case the redis failed the event stits here safily
+       event_type = models.CharField(max_length = 255)
+       payload = models.JSONField(default=dict)
+       created_at = models.DateTimeField(auto_now_add=True)
+       processed = models.BooleanField(default=False,db_index= True)
+       processed_at = models.DateTimeField(null = True,blank=True)
+       error_message = models.TextField(null=True,blank=True)
+
+
+

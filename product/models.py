@@ -124,6 +124,13 @@ class Review(models.Model):
               return f"{self.user.first_name} - {self.product.name} ({self.rating} Stars)"
               
 
+class ProductPurchaseHistory(models.Model):
+       user_id = models.IntegerField(db_index=True)
+       product = models.ForeignKey(Product,on_delete=models.CASCADE)       
+       purchased_at = models.DateField(auto_now_add=True)
+
+       class Meta:
+              unique_together = [['user_id','product']]
 
 
 

@@ -4,16 +4,16 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
 from django.db.models import Sum
 from .models import AuditLog
-from orders.models import Order, OrderItem
-from product.models import Product
-from django.contrib.auth  import get_user_model
 from django.db.models.functions import TruncDate
 from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response
+from orders.analytics_services import get_sales_chart_data, get_dashboard_order_metrics,get_top_selling_products
+from product.analytics_services import get_active_products_count, get_low_stock_product_data
+from .user_services import get_recent_users_list, get_total_customers_count
 from .serializers import AuditLogSerializer
 import logging
-User = get_user_model()
+
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +24,14 @@ class DashboardSummaryView(APIView):
        
        @cache_response(key_prefix='dashboard_summary', timeout=900, error_message="There is An Error occured in Calculation")
        def get(self,request,*args, **kwargs):
-              # Calculate the Total Revenus
-              #Only counting the Order that status is 'peding', 'shipped', 'Delivered'
-              valid_orders = Order.objects.valid_sales()
+              
+              metrics = get_dashboard_order_metrics()
+              total_revenue = metrics['total_revenue']
+              total_orders = metrics['total_orders']
+
+              total_products = get_active_products_count()# Total Products (active ony)
        
-              #Aggregate sums up the 'total_price' column .Returns {'total_price__sum': 0020000};
-              revenue_data = valid_orders.aggregate(Sum('total_price'))
-              total_revenue = revenue_data['total_price__sum'] or 0 # Sum('total_price'), Django needs a name for the answer it gets back. By default, it combines the field name and the math function: field_name + __ + function = total_price__sum
-       
-              # Aggreagat : Making the calculation it the Db and rather than getting all the date to the python and doing the math one by one in python .which is slow
-              total_orders = valid_orders.count()# Total Order Count
-       
-              total_products = Product.objects.filter(is_active = True).count()# Total Products (active ony)
-       
-              total_users = User.objects.filter(is_staff=False).count()#Total Customers (everyone who is not and Admin)
+              total_users = get_total_customers_count()#Total Customers (everyone who is not and Admin)
        
               data = {
                      "total_revenue": total_revenue,
@@ -52,13 +46,7 @@ class SalesChartView(APIView):
 
        @cache_response(key_prefix='sales_chart_data', timeout=1800, error_message="Unable to Load Sales Chart View at this moment")
        def get(self,request,*args, **kwargs):
-              valid_orders = Order.objects.valid_sales()
-              sale_data = (
-                     valid_orders.annotate(date=TruncDate('created_at'))
-                     .values('date').annotate(total= Sum('total_price'))
-                     .order_by('date')
-              )
-              final_data = list(sale_data)
+              final_data  = get_sales_chart_data()
               return Response(final_data)
 
 class TopSellingProductsView(APIView):
@@ -66,8 +54,9 @@ class TopSellingProductsView(APIView):
 
        @cache_response(key_prefix='top_selling_products', timeout=1800, error_message="Unable to load top selling products data.")
        def get(self,request,*args, **kwargs):
-              top_products = OrderItem.objects.top_selling()
-              data_to_cache = list(top_products)
+       
+              top_products =  get_top_selling_products()
+              data_to_cache = top_products
               return Response(data_to_cache)
 
 class UserListView(APIView):
@@ -77,8 +66,8 @@ class UserListView(APIView):
 
        @cache_response(key_prefix='user_list', timeout=1800, error_message="Unable to Load User Details at this moment")
        def get(self,request,*args, **kwargs):
-              users = User.objects.filter(is_staff = False).values('id','first_name','email', 'date_joined')
-              data_to_cache = list(users)
+
+              data_to_cache = get_recent_users_list()
               return Response(data_to_cache)
 
 
@@ -89,11 +78,8 @@ class LowStockProductView(APIView):
 
        @cache_response(key_prefix='low_stock_product', timeout=1800, error_message="Unable to Load the Low Stock Details at this moment")
        def get(self,request,*args, **kwargs):
-              low_stock_products = Product.objects.filter(
-                     stock__lte = 5,
-                     is_active = True
-              ).values('id','name','stock','price')
-              data_to_cache = list(low_stock_products)
+              low_stock_products = get_low_stock_product_data()
+              data_to_cache = low_stock_products
               return Response(data_to_cache)
 
 
