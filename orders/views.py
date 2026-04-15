@@ -36,6 +36,8 @@ class OrderViewSet(viewsets.ModelViewSet):
        @action(detail=False,methods =['post'])
        def add_to_cart(self, request, *args, **kwargs):
 
+              #"This is intentionally NOT idempotent. Repeated calls increment quantity, which matches standard e-commerce UX. For strict API idempotency, the client should use update_quantity with an absolute value instead."
+
               product_id = request.data.get('product_id')
 
               quantity = int(request.data.get('quantity',1))
@@ -99,7 +101,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return Response(self.get_serializer(order).data)
                      
               except Order.DoesNotExist:
-                     return error_response(message =  'Cart is empty', status_code = 404)
+                     return error_response(message =  'no cart and no pending order', status_code = 404)
               except ShippingAddress.DoesNotExist:
                      return error_response(message = 'Invalid Address ID', status_code = 404)
               except ValueError as e:

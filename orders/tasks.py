@@ -64,7 +64,7 @@ def task_release_unpaid_orders():
 
 @shared_task
 def sweep_order_outbox():
-       events = OrderEventOutbox.objects.filter(processed = False)
+       events = OrderEventOutbox.objects.filter(processed = False, retry_count__lt = 5).order_by('created_at')
 
        for event in events:
               try:
@@ -81,6 +81,9 @@ def sweep_order_outbox():
                      logger.info(f"Successfully broadcasted event: {event.event_type}")
               except Exception as e:
                      event.error_message = str(e)
+                     event.retry_count += 1
+                     if event.retry_count == 5:
+                            logger.critical(f"Failed to Excecte even {event.id}")
                      event.save()
                      logger.error(f"Faliled to broadcast event {event.id} : {e}")
 

@@ -16,7 +16,17 @@ def rebuild_search_index():
 
        logger.info(f"CQRS index Rebuilt:{len(products)} products cached in Redis")
 
+
+
+
 def fast_search_catalog(search_term):
+
+       """
+       This is O(n) — acceptable for catalogs under ~5,000 products
+       For larger catalogs, this should be replaced with Elasticsearch or Redis Search (RediSearch)
+       The PostgreSQL full-text search in get_queryset is the production-grade path; this is the fast/lightweight alternative
+
+       """
 
        cache_catalog = cache.get('cqrs:product_catalog')
 

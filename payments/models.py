@@ -34,3 +34,4 @@ class PaymentEventOutbox(models.Model):
        processed = models.BooleanField(default= False, db_index=True)
        processed_at = models.DateTimeField(null = True,blank= True)
        error_message = models.TextField(null = True, blank=True)
+       retry_count = models.PositiveIntegerField(default=0)

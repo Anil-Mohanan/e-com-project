@@ -7,7 +7,7 @@ from .tasks import (
        task_send_shipping_email,
        task_cancellation_email
 )
-from datetime import datetime
+from django.utils import timezone
 from django.core.cache import cache
 import logging
 
@@ -16,10 +16,16 @@ logger = logging.getLogger('orders')
 
 
 def process_checkout(user,address_id):
+
        lock_key = f"checkout_lock_{user.id}"
        if not cache.add(lock_key,"locked",timeout=15):
               raise ValueError("Checkout already in progress. Please wait.")
+       
        try:
+              existing_order = Order.objects.filter(status = "Pending" , user_id = user.id).order_by('-created_at').first()
+              if existing_order:
+                     return existing_order
+
               with transaction.atomic():
                      #Get the cart
                      order = Order.objects.current_cart(user).get()
@@ -147,7 +153,7 @@ def mark_as_paid_process(order):
 
        with transaction.atomic():
               order.is_paid= True
-              order.paid_at = datetime.now()
+              order.paid_at = timezone.now()
               order.save()
 
               logger.info(f"Admin marked Order {order.order_id} as paid manually.")
@@ -166,10 +172,3 @@ def mark_as_paid_process(order):
               )
 
               return order
-
-def has_user_purchased_product(user_id,product_id):
-
-       return OrderItem.objects.filter(
-              order__user_id = user_id,
-              product_id = product_id
-       ).exists()

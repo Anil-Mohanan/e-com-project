@@ -23,7 +23,7 @@ def process_stripe_webhook_task(self,event_data):
 
 @shared_task
 def sweeper_payment_outbox():
-       events = PaymentEventOutbox.objects.filter(processed = False)
+       events = PaymentEventOutbox.objects.filter(processed = False, retry_count__lt = 5).order_by('created_at')
 
        for event in events:
               try:
@@ -38,10 +38,5 @@ def sweeper_payment_outbox():
                      event.save()
                      logger.error(f"Faliled to broadcast event {event.id} : {e}")
 
-
-@shared_task
-def process_stripe_webhook_task(event_data):
-
-       handle_stripe_event(event_data)
 
        

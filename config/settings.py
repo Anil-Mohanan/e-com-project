@@ -332,6 +332,16 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 # Keep Celery in sync with your Django timezone
 CELERY_TIMEZONE = TIME_ZONE
+# This change the celery acknowloedgment behavior
+CELERY_TASK_ACKS_LATE = True
+
+# If a worker is killed (OOM, Docker restart), the task is explicitly rejected and returned to the queue instead of being marked as failed and discarded.
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# if a task runs more than 300 sec(5 minitutes) cerlery rasise a SoftTimeLimitExceeded excpetion inside the task. And the task can clean up and . without this a stuck task blocks the worker slot
+CELERY_TASK_SOFT_TIME_LIMIT = 300
+
+CELERY_TASK_TIME_LIMIT = 360 # the hard kill. if the a task ingore the soft limit celery force fully termenates is when it reached 360 sec (6 mint)
 
 CELERY_BEAT_SCHEDULE = {
         'precompute-dashboard-every-15-minutes': {
@@ -349,6 +359,10 @@ CELERY_BEAT_SCHEDULE = {
     'sweep-payment-outbox-every-5-seconds':{
         'task': 'payments.tasks.sweeper_payment_outbox',
         'schedule': 5.0,
+    },
+    'task-rebuild-search-index-every-10-minitus':{
+        'task' : 'product.tasks.task_rebuild_search_index',
+        'schedule' : crontab(minute='*/10')
     }
 }
 SESSION_COOKIE_HTTPONLY = True

@@ -2,6 +2,7 @@ from celery import shared_task
 from celery import current_app
 from .services import deduct_inventory_for_order,restore_inventory_for_order
 from .models import ProductPurchaseHistory
+from .search_services import rebuild_search_index
 import logging
 
 logger = logging.getLogger(__name__)
@@ -46,3 +47,7 @@ def handle_order_cancelle_event(payload):
        items_data = payload.get('items',[])
 
        restore_inventory_for_order(items_data)
+
+@shared_task
+def task_rebuild_search_index():
+       rebuild_search_index()

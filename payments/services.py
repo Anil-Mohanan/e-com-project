@@ -6,6 +6,7 @@ from .models import Payment
 from orders.payment_services import get_order_details_for_payment 
 from .models import PaymentEventOutbox
 import logging
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def handle_stripe_event(event):
               except Payment.DoesNotExist:
                      logger.warning(f"Payment record missing for transaction {transaction_id}, but stripe,succeeded")
 
-                     Payment.objects.create(order_id = order_id, status = 'Success',payment_method = 'Stripe',transaction_id = transaction_id, amount = intent['amount']/100)
+                     Payment.objects.create(order_id = order_id, status = 'Success',payment_method = 'Stripe',transaction_id = transaction_id, amount = Decimal(intent['amount']) / Decimal('100'))
                      
                      PaymentEventOutbox.objects.create(
                             event_type = 'payment.successful',

@@ -70,8 +70,6 @@ class StripeWebhookView(APIView):
                      event = stripe.Webhook.construct_event(
                             payload, sig_header, endpoint_secret# It runs the math. If the math matches: It converts the raw text into a Python Object (dictionary) and returns it. If the math fails: It crashes immediately (raises an error), stopping the hacker.
                      )
-                     print(event)
-
               except ValueError as e:
                      # if the payload was empty or garbage JSON
                      return HttpResponse(status=400)

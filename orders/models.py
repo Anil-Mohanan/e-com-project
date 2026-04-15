@@ -131,6 +131,7 @@ class OrderEventOutbox(models.Model): # Event Box that store the Even in SQL in 
        processed = models.BooleanField(default=False,db_index= True)
        processed_at = models.DateTimeField(null = True,blank=True)
        error_message = models.TextField(null=True,blank=True)
-
+       retry_count = models.PositiveIntegerField(default=0)
+       
 
 

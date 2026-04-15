@@ -1,7 +1,7 @@
 from .models import Order , OrderEventOutbox
 from .tasks import task_send_payment_success_email
 from django.db import transaction
-from datetime import datetime
+from django.utils import timezone
 
 def get_order_details_for_payment(order_id , user):
        try:
@@ -20,12 +20,14 @@ def get_order_details_for_payment(order_id , user):
 def confirm_order_payment(order_id):
        try:
               order = Order.objects.get(order_id = order_id)
+              if order.is_paid:
+                     return
        except Order.DoesNotExist:
               raise ValueError("Order does not exist")
 
        order.status = 'OrderConfirmed'
        order.is_paid = True
-       order.paid_at = datetime.now()
+       order.paid_at = timezone.now()
        order.save()
 
        items = order.items.all()
