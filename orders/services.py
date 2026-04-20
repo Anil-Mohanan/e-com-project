@@ -1,5 +1,5 @@
 from .models import ShippingAddress, Order, OrderItem, OrderEventOutbox
-from product.services import get_product_details
+from product.services import get_product_details, get_product_price
 from django.db import transaction
 from .tasks import (
        task_send_payment_success_email,
@@ -123,33 +123,35 @@ def update_status_process(order,new_status):
        return order
 
 def cancel_order_process(order):
-       
-              with transaction.atomic():
-                     #Resotre Stock
-                     items = order.items.all()
-                     
-                     items_data = [{"product_id":item.product_id, "quantity": item.quantity} for item in items]
 
-                     OrderEventOutbox.objects.create(
-                            event_type = 'order.cancelled',
-                            payload = {
-                                   "order_id": str(order.order_id),
-                                   "items": [
-                                          {"product_id":item.product_id,"quantity": item.quantity} for item in items
-                                   ]
-                            }
-                     )
-
-                     order.status = 'Cancelled'
-                     order.save()
-                     logger.info(f"Order {order.order_id} was cancelled successfully. Stock restored.")
-
-                     transaction.on_commit(lambda: task_cancellation_email.delay(order.order_id))
-
-
+       if order.status == 'Cancelled':
               return order
 
+       with transaction.atomic():
+              #Resotre Stock
+              items = order.items.all()
+              
+              items_data = [{"product_id":item.product_id, "quantity": item.quantity} for item in items]
+              OrderEventOutbox.objects.create(
+                     event_type = 'order.cancelled',
+                     payload = {
+                            "order_id": str(order.order_id),
+                            "items": [
+                                   {"product_id":item.product_id,"quantity": item.quantity} for item in items
+                            ]
+                     }
+              )
+              order.status = 'Cancelled'
+              order.save()
+              logger.info(f"Order {order.order_id} was cancelled successfully. Stock restored.")
+              transaction.on_commit(lambda: task_cancellation_email.delay(order.order_id))
+
+       return order
+
 def mark_as_paid_process(order):
+
+       if order.is_paid:
+              return order
 
        with transaction.atomic():
               order.is_paid= True
@@ -172,3 +174,23 @@ def mark_as_paid_process(order):
               )
 
               return order
+
+def sync_order_prices(order):
+
+       """
+       Bridge Service: Fetches live prices from the Product app and updates 
+       the Cart items so that the Order model's total_price is accurate.
+       """
+
+       if order.status != 'Cart':
+              return
+       items = order.items.all()
+       for item in items:
+
+              live_price = get_product_price(item.product_id,variant_id=item.variant_id)
+
+              item.price_at_purchase = live_price
+              item.save()
+
+       order.save()
+       logger.info(f'Price synced for Cart {order.order_id}')

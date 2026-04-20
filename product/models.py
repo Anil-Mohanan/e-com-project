@@ -122,6 +122,9 @@ class Review(models.Model):
 
        def __str__(self):
               return f"{self.user.first_name} - {self.product.name} ({self.rating} Stars)"
+       
+       class Meta:
+              unique_together = [['product', 'user']]
               
 
 class ProductPurchaseHistory(models.Model):

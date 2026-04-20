@@ -8,8 +8,9 @@ from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressS
 from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response,success_response
-from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process
+from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process,sync_order_prices
 from rest_framework.throttling  import UserRateThrottle
+from django.core.exceptions import ObjectDoesNotExist
 import logging
 
 
@@ -41,12 +42,14 @@ class OrderViewSet(viewsets.ModelViewSet):
               product_id = request.data.get('product_id')
 
               quantity = int(request.data.get('quantity',1))
-
-              order,item = add_to_cart_process(
-                     user=request.user,
-                     product_id=product_id,
-                     quantity=quantity,
-              )
+              try:
+                     order,item = add_to_cart_process(
+                            user=request.user,
+                            product_id=product_id,
+                            quantity=quantity,
+                     )
+              except ObjectDoesNotExist:
+                     return error_response(message = "Product not found",status_code=404)
 
               serializer = self.get_serializer(order)
 
@@ -113,12 +116,17 @@ class OrderViewSet(viewsets.ModelViewSet):
        def cart(self, request, *args, **kwargs):
               """Fethc the current user's active cart.
               if it doesn't exist, create a new one."""
+
               order, created = Order.objects.get_or_create_cart(request.user)
+              
+              sync_order_prices(order)
+
               serializer = self.get_serializer(order)
+
               return Response(serializer.data)
 
        @action(detail=True, methods=['patch'])
-       def update_status(self,request,order_id = None):
+       def update_status(self,request,order_id = None,**kwargs):
               """only Admin Can change the order status(e.g, Pending, shipped)"""
                      
               #Security Check: Are you Admin
@@ -138,7 +146,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               return success_response(message = "Order updated Successfully",data ={'current_status':order.status})
 
        @action(detail=True, methods=['post'])
-       def cancel_order(self,request,order_id = None):
+       def cancel_order(self,request,order_id = None,**kwargs):
               """Allow user to Cancel their OWN order.
               critical: This must restore the stock on the products!"""
 
@@ -157,7 +165,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return error_response(message =  str(e), status_code = 500)
                      
        @action(detail=True, methods=['patch'])
-       def mark_as_paid(self,request, order_id =None):
+       def mark_as_paid(self,request, order_id =None,**kwargs):
               """Manal Pay by the Admin to Mark an order is paid Use full of COD"""
               
               if not request.user.is_staff:

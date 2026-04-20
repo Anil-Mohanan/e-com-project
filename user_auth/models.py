@@ -17,11 +17,14 @@ class CustomUserManager(BaseUserManager.from_queryset(UserQuerySet)):
               if not email:
                      raise ValueError('The Email field must be set')
               
+              email = email.strip()
+              
               if len(email) > 255:
                      raise ValueError('Eamil is too long')
               
               try:
                      validate_email(email)
+
               except ValidationError:
                      raise ValueError('The Email is invalid')
               
@@ -31,7 +34,7 @@ class CustomUserManager(BaseUserManager.from_queryset(UserQuerySet)):
               if len(password) > 128:
                      raise ValueError("Password is too long")
               
-              email = self.normalize_email(email).strip().lower()#Normalization converting anything in the email to lowecase
+              email = self.normalize_email(email).lower()#Normalization converting anything in the email to lowecase
               
               
               extra_fields.pop('is_email_verified',None)# Striping out sensitive fields from extra_fields if they exist

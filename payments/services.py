@@ -18,7 +18,7 @@ def create_stripe_checkout(user,order_id):
                      #cheking if this order already has "Success" paymet linked to it.
                      # 'hasster' checks if the 'payment relationship exists in the DB.       
 
-       has_successful_payment = Payment.objects.filter(order__order_id = order_id, status = "Success").exists()
+       has_successful_payment = Payment.objects.filter(order_id = order_id, status = "Success").exists()
        if has_successful_payment:
               raise ValueError("This order is already paid")
 

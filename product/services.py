@@ -1,6 +1,7 @@
 from .models import Product, ProductImages, ProductVariant, Category, Review, InventoryUnit
 from django.db import transaction
 import logging
+import uuid
 
 logger = logging.getLogger('product')
 
@@ -67,7 +68,7 @@ def restore_inventory_for_order(items_data):
               for unit in sold_units:
                      unit.status = 'In Stock'
               InventoryUnit.objects.bulk_update(sold_units,['status'])
-              product.stock += item['quantity']
+              product.stock += len(sold_units)
               product.save()
 
 
@@ -134,3 +135,33 @@ def get_product_details(product_id: int) -> dict:
               "name": product.name,
               "price" : product.price
        }
+
+def add_product_stock(product_id, quantity, variant_id=None): # Add variant_id
+    if quantity <= 0:
+       raise ValueError("Quantity must be positive and grater than zero")
+
+    with transaction.atomic():
+       product = Product.objects.select_for_update().get(id=product_id)
+       
+       # 1. Logic for Variant Support
+       variant = None
+       if variant_id:
+           variant = ProductVariant.objects.get(id=variant_id)
+           # If your variant has its own stock field, update it here too!
+           # variant.stock += quantity
+           # variant.save()
+       # 2. Create units WITH the variant link
+       units = [
+            InventoryUnit(
+                product=product, 
+                variant=variant, 
+                status='In Stock',
+                serial_number=f"SN-{uuid.uuid4().hex[:10].upper()}" # Generate a unique SN
+            ) 
+            for _ in range(quantity)
+        ]
+       InventoryUnit.objects.bulk_create(units)
+       
+       # 3. Update the main counter
+       product.stock += quantity
+       product.save()

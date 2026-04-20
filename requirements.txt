@@ -25,3 +25,8 @@ urllib3==2.6.3
 celery
 gunicorn
 argon2-cffi
+pytest
+pytest-django
+factory-boy
+pytest-cov
+bandit

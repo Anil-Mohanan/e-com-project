@@ -9,8 +9,20 @@ logger = logging.getLogger(__name__)
 def rebuild_search_index():
 
        products = list(Product.objects.filter(is_active = True).values('id','name','slug','price','brand')) #Why .values()? Standard Django QuerySets return heavy Python class objects that cannot be easily converted to JSON strings. .values() strips away all the Django bloat and returns raw, lightning-fast dictionaries.
+       # Logic: 
+       processed_products = [
+              {
+                     "id": p['id'],
+                     "name": p['name'],
+                     "price": float(p['price']),
+                     "brand": p['brand'],  # Convert Decimal to float for JSON
+                     "slug" : p['slug']
+              } 
+              for p in products
+       ]
 
-       json_data = json.dumps(products)
+       
+       json_data = json.dumps(processed_products)
 
        cache.set('cqrs:product_catalog',json_data,timeout=None)
 

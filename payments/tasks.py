@@ -35,6 +35,7 @@ def sweeper_payment_outbox():
                      logger.info(f"Successfully broadcasted event: {event.event_type}")
               except Exception as e:
                      event.error_message = str(e)
+                     event.retry_count += 1
                      event.save()
                      logger.error(f"Faliled to broadcast event {event.id} : {e}")
 

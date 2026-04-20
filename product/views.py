@@ -71,29 +71,36 @@ class ProductViewSet(viewsets.ModelViewSet):
               return queryset
 
        def get_permissions(self):
-       
-             if self.request.method in permissions.SAFE_METHODS:
+
+              # 1. Explicitly allow normal Authenticated customers to leave reviews
+              if self.action == 'add_review':
+                     return [permissions.IsAuthenticated()]
+
+              if self.request.method in permissions.SAFE_METHODS:
                      return [permissions.AllowAny()] # if they just want to READ (GET), let anyone in
-             else:
+              else:
                     return [IsSellerOrAdmin()] # if they want to write (POST,PUT, DELETE) chekc if they are a Seller
+              
+              
        @action(detail=True, methods=['post'],permission_classes = [permissions.IsAuthenticated])  # set detail True for to foucse on one speicifc item . write permission_classes inside action to over ride the defualt IsAuthenticated . Reviwes return by Customers not Sellers
-       def add_review(self,request,slug=None):
+       def add_review(self,request,slug=None,**kwargs):
               product = self.get_object() # get the product based on the slug in URL
               user = request.user
               data = request.data
              
-              #check if the user already reviewd
+              # 1. Verification: Already reviewed?
               if product.reviews.filter(user=user).exists():
                      return error_response(message="You have already reviewd this Product", status_code=400)
-       
-                     # 2 verfication : did the buy it?
-                     # checking if and orders exist in that is delvered (or any stauts for now)
-                     had_bought = ProductPurchaseHistory.objects.filter(user_id = user.id,product = product).exists()
-                     if not had_bought:
-                           return Response(
-                                  messages =  'You can only reiview products you have purchased.',
-                                  status_code = 400
-                           )
+        
+              # 2. Verification: Did they actually buy it? (NO INDENTATION HERE)
+              had_bought = ProductPurchaseHistory.objects.filter(user_id=user.id, product=product).exists()
+        
+              if not had_bought:
+                     # USE error_response, NOT Response. And 'message', NOT 'messages'
+                     return error_response(
+                            message='You can only reiview products you have purchased.',
+                            status_code=400
+                     )
               review = add_review_process(
                      product = product,
                      user = user,
@@ -111,14 +118,17 @@ class ProductViewSet(viewsets.ModelViewSet):
 
        @cache_response(key_prefix="product_detail",error_message="Product not Found")      
        def retrieve(self, request, *args, **kwargs):
-              instance = self.get_object()
+              try:
+                     instance = self.get_object()
+              except Exception:
+                     return error_response(message = "Product not found", status_code = 404)
               serializer = self.get_serializer(instance)
               data = serializer.data
               return Response(data) 
        
        
        @action(detail=False,methods=['get'],permission_classes=[permissions.AllowAny])
-       def compare(self,request):
+       def compare(self,request,**kwargs):
               products_ids_string = request.query_params.get('ids')
 
               if not products_ids_string:
@@ -143,7 +153,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
        """Viewset for Categories.
        Same Logic: Public can view, only Admin can edit"""
 
-       queryset = Category.objects.all()
+       queryset = Category.objects.all().order_by('id')
        serializer_class = CategorySerializer
        lookup_field = 'slug'
 
@@ -165,12 +175,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
               data = serializer.data # what is this for 
               return Response(data)
 
-class ProductVariantViewSet(viewsets.ModelViewSet):
+class ProductVariantViewSet(viewsets.ReadOnlyModelViewSet):
        """Manage Vairants (Size/color) for Products Admin create the Main product first , then add the varians here"""
 
-       queryset = ProductVariant.objects.all()
+       queryset = ProductVariant.objects.all().order_by('id')
        serializer_class = ProductVariantSerializer
-       permission_classes = [IsSellerOrAdmin]
        lookup_field = 'slug'
 
        def get_queryset(self):

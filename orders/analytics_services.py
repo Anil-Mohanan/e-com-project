@@ -5,7 +5,6 @@ from django.db.models.functions import TruncDate
 def get_dashboard_order_metrics():
 
        valid_orders = Order.objects.valid_sales()
-       top_selling = Order.objects.top_selling()
        total_orders = valid_orders.count()
        revenue_data = valid_orders.aggregate(Sum('total_price'))
        total_revenue  = revenue_data['total_price__sum'] or 0

@@ -2,7 +2,7 @@ from django.urls import path
 from .views import DashboardSummaryView, SalesChartView,TopSellingProductsView,UserListView,LowStockProductView,AuditLogListView
 
 urlpatterns = [
-       path('summary/', DashboardSummaryView.as_view(),name = 'dahsboard-summary'),
+       path('dashboard-summary/', DashboardSummaryView.as_view(),name = 'dashboard-summary'),
        path('sales-chart/',SalesChartView.as_view(),name='sales-chart'),
        path('top-products/', TopSellingProductsView.as_view(), name='top-products'),
        path('users/',UserListView.as_view(), name='user-list'),

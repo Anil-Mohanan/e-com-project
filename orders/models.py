@@ -94,11 +94,13 @@ class Order(models.Model):
 class OrderItemQuerySet(models.QuerySet):
        
        def top_selling(self,limit=5):
-              return self.values('product__name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
+              return self.values('product_name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
        
 class OrderItem(models.Model):
+    objects = OrderItemQuerySet.as_manager()   
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product_id = models.IntegerField(db_index=True)
+    variant_id = models.IntegerField(db_index=True,null=True,blank=True)
     product_name = models.CharField(max_length=255)
     quantity = models.PositiveIntegerField(default=1)
     
