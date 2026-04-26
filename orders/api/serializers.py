@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Order , OrderItem, ShippingAddress
+from orders.models import Order , OrderItem, ShippingAddress
 from datetime import timedelta
 
 class OrderItemSerializer(serializers.ModelSerializer):

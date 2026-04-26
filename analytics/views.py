@@ -2,16 +2,12 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
-from django.db.models import Sum
-from .models import AuditLog
-from django.db.models.functions import TruncDate
-from django.core.cache import cache
 from config.cache_utils import cache_response
-from config.utils import error_response
-from orders.analytics_services import get_sales_chart_data, get_dashboard_order_metrics,get_top_selling_products
-from product.analytics_services import get_active_products_count, get_low_stock_product_data
-from .user_services import get_recent_users_list, get_total_customers_count
+from orders.services.analytics import get_top_selling_products
+from product.analytics_services import get_low_stock_product_data
+from .user_services import get_recent_users_list,get_all_audit_log
 from .serializers import AuditLogSerializer
+from .strategies import OrderMetricsProvider, ProductMetricsProvider, UserMetricsProvider,DailyAggregationStrategy, MonthlyAggregationStrategy
 import logging
 
 
@@ -25,29 +21,37 @@ class DashboardSummaryView(APIView):
        @cache_response(key_prefix='dashboard_summary', timeout=900, error_message="There is An Error occured in Calculation")
        def get(self,request,*args, **kwargs):
               
-              metrics = get_dashboard_order_metrics()
-              total_revenue = metrics['total_revenue']
-              total_orders = metrics['total_orders']
-
-              total_products = get_active_products_count()# Total Products (active ony)
-       
-              total_users = get_total_customers_count()#Total Customers (everyone who is not and Admin)
-       
-              data = {
-                     "total_revenue": total_revenue,
-                     "total_orders" : total_orders,
-                     "total_products": total_products,
-                     "total_users": total_users  
-              }
+              # 1. Register your strategies
+              providers = [
+                     OrderMetricsProvider(),
+                     ProductMetricsProvider(),
+                     UserMetricsProvider()
+              ]
+              
+              # 2. Dynamically build the response!
+              data = {}
+              for provider in providers:
+                     data.update(provider.get_metrics())
+                     
               return Response(data)
       
 class SalesChartView(APIView):
        permission_classes = [IsAdminUser]
 
-       @cache_response(key_prefix='sales_chart_data', timeout=1800, error_message="Unable to Load Sales Chart View at this moment")
        def get(self,request,*args, **kwargs):
-              final_data  = get_sales_chart_data()
-              return Response(final_data)
+              interval = request.query_params.get('interval', 'daily')
+              
+              # 2. Map the string to the Strategy!
+              strategies = {
+                     'daily': DailyAggregationStrategy(),
+                     'monthly': MonthlyAggregationStrategy()
+              }
+              
+              # Default to Daily if they pass garbage
+              strategy = strategies.get(interval, DailyAggregationStrategy())
+              
+              # 3. Execute!
+              return Response(strategy.get_data())
 
 class TopSellingProductsView(APIView):
        permission_classes = [IsAdminUser]
@@ -91,7 +95,7 @@ class AuditLogListView(APIView):
        serializer_class = AuditLogSerializer
 
        def get(self,request,*args, **kwargs):
-              audit_list = AuditLog.objects.all().order_by('-created_at')
+              audit_list = get_all_audit_log()
               
               serializer = self.serializer_class(audit_list, many=True)
 

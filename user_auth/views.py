@@ -5,17 +5,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes , force_str
-from .tasks import task_send_verification_email
-from django.urls import reverse
 from config.utils import error_response, success_response
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from .models import UserDeviceSession
-from django.db import transaction
+from .services import verify_email_process , get_user_active_sessions, revoke_device_access,process_user_registration
+import dataclasses
 
 import logging
 
@@ -29,16 +22,9 @@ class RegisterView(generics.CreateAPIView):# using generics for safety reasons ,
        def perform_create(self, serializer):
               user = serializer.save()
               
-              uid = urlsafe_base64_encode(force_bytes(user.pk))  # :urlsafe_base64_encode takes the user's Primary Key (like 15) and turns it into a string (like MTU)
-              token = default_token_generator.make_token(user) #default_token_generator.make_token creates a one-time-use string based on the user's password and the current time. It's the "key" that proves the link is real
-
               version = self.kwargs.get('version','v1')
               
-              link = reverse('verify_email', kwargs={'uidb64': uid, 'token' : token, 'version' : version})       
-
-              verification_url = f"http://127.0.0.1:8000{link}"
-
-              transaction.on_commit(lambda:task_send_verification_email.delay(user.email,verification_url))
+              process_user_registration(user,version)
               
               
 class LogoutView(APIView):
@@ -83,17 +69,13 @@ class VerifyEmailView(APIView):
 
        def get(self,request,uidb64,token):
               try:
-                     uid = force_str(urlsafe_base64_decode(uidb64))
-                     user = User.objects.get(pk=uid)
-              except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-                     user = None
-              try:
-                     if user is not None and default_token_generator. check_token(user,token):
-                            user.is_email_verified = True
-                            user.save()
-                            return success_response(message =  "Email verified Successfully!", status_code = 200)
+                     is_verified = verify_email_process(uidb64, token)
+                     
+                     if is_verified:
+                            return success_response(message="Email verified Successfully!", status_code=200)
                      else:
-                            return error_response(message = "Invalid Link", status_code = 400)
+                            return error_response(message="Invalid Link",status_code=400)
+
               except Exception as e:
                      return error_response(message="Unable to Verify Email at this moment", status_code=500, log_message=f"Error in VerifyEmailView : {e}")
 
@@ -108,29 +90,11 @@ class ActiveSessionView(APIView):
 
        def get(self, request, *args, **kwargs):
               try:
-                     tokens = OutstandingToken.objects.filter(user = request.user)   # Django will return a list contianing every single refresh token
-                      
-                     active_sessions = []
-                     for token in tokens:
-                            if not hasattr(token,'blacklistedtoken'):
-                                   ip_add = "Unknown"
-                                   device = "Unknown"
-                                   try:
-                                          device_session = UserDeviceSession.objects.get(jti = token.jti)
-                                          ip_add = device_session.ip_address
-                                          device = device_session.device_name
+                     active_sessions = get_user_active_sessions(request.user)   # Django will return a list contianing every single refresh token
+                     
+                     response_data = [dataclasses.asdict(session) for session in active_sessions]
 
-                                   except UserDeviceSession.DoesNotExist:
-                                          pass
-
-                                   active_sessions.append({
-                                          "jti": token.jti,
-                                          "created_at": token.created_at,
-                                          "expires_at": token.expires_at,
-                                          "ip_address" : ip_add,
-                                          "device_name": device,
-                                   })
-                     return Response(active_sessions)
+                     return Response(response_data)
               except Exception as e:
                      return error_response(message="No ActiveSession Found",status_code=404,log_message=f"Error in ActiveSessionView : {e}")
 
@@ -143,14 +107,12 @@ class RevokedDevicesView(APIView):
               
               token_jti = request.data.get('jti')
 
-              if not token_jti:
-                            return error_response(message = "JTI is Required",status=status.HTTP_400_BAD_REQUEST)
               try:
-                     token = OutstandingToken.objects.get(jti = token_jti, user = request.user) # find the OutstandingToken token using JTI
+                     revoke_device_access(request.user, token_jti)
+                     return success_response(message="Logout Success from the device")
 
-                     BlacklistedToken.objects.get_or_create(token = token) # Blacklisting only the specfic device session
-                     return success_response(message = "Logout Sucess from the device")
-              except OutstandingToken.DoesNotExist:
-                     return error_response(message='Session not found or already logged out', status_code=404, log_message="Error in RevokedDevicesView")
-
-                     
+              except ValueError as e:
+                     return error_response(message=str(e),status_code=400)
+              
+              except Exception as e:
+                     return error_response(message="Session not found or already logged out",status_code=404, log_message=f"Error in RevokedDevicesView: {e}")

@@ -3,12 +3,12 @@ from django.shortcuts import render
 from rest_framework import viewsets , permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Order, OrderItem,ShippingAddress
+from orders.models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer
 from django.core.cache import cache
 from config.cache_utils import cache_response
 from config.utils import error_response,success_response
-from .services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process,sync_order_prices
+from orders.services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process,sync_order_prices,get_user_cart
 from rest_framework.throttling  import UserRateThrottle
 from django.core.exceptions import ObjectDoesNotExist
 import logging
@@ -117,7 +117,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               """Fethc the current user's active cart.
               if it doesn't exist, create a new one."""
 
-              order, created = Order.objects.get_or_create_cart(request.user)
+              order = get_user_cart(request.user)
               
               sync_order_prices(order)
 

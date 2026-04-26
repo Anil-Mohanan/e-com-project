@@ -1,16 +1,16 @@
-from django.contrib.auth import  get_user_model
+from . import repositories as default_repo
 
-User = get_user_model()
 
-def get_recent_users_list():
+
+def get_recent_users_list(repo = default_repo):
        
-       
-       users = User.objects.filter(is_staff = False).values('id','first_name','email', 'date_joined')
+       return repo.get_recent_users()
 
-       return list(users)
+def get_total_customers_count(repo = default_repo):
 
-def get_total_customers_count():
+       return repo.get_total_customers_count()
 
-       total_users = User.objects.filter(is_staff=False).count()#Total Customers (everyone who is not and Admin)
+def get_all_audit_log(repo = default_repo):
 
-       return total_users
+       return repo.get_audit_logs()
+

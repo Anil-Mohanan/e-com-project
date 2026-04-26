@@ -1,20 +1,19 @@
 from celery import shared_task
 from celery import current_app 
-from django.utils import timezone
 from .services import handle_stripe_event
-from .models import PaymentEventOutbox
+from . import repositories as default_repo
 import logging
 
 logger = logging.getLogger(__name__)
 
 @shared_task(bind= True, max_retries = 3)
-def process_stripe_webhook_task(self,event_data):
+def process_stripe_webhook_task(self,event_data,repo=default_repo):
        """Take the raw webhook data from strie and process the database changes"""
 
        logger.info("Processing Stripe webhook in background.....")
 
        try:
-              handle_stripe_event(event_data)
+              handle_stripe_event(event_data,repo)
               return  'webhook process successfully'
        except Exception as exc:
               logger.error(f"webhook processing failed. Retrying... ")
@@ -22,22 +21,16 @@ def process_stripe_webhook_task(self,event_data):
               
 
 @shared_task
-def sweeper_payment_outbox():
-       events = PaymentEventOutbox.objects.filter(processed = False, retry_count__lt = 5).order_by('created_at')
+def sweeper_payment_outbox(repo=default_repo):
+       events = repo.get_unprocessed_outbox_events()
 
        for event in events:
               try:
                      if event.event_type == 'payment.successful':
                             current_app.send_task('orders.handle_payment_successful',args = [event.payload])
-                     event.processed = True
-                     event.processed_at = timezone.now()
-                     event.save()
+                     repo.mark_out_box_event_processed(event.id)
                      logger.info(f"Successfully broadcasted event: {event.event_type}")
               except Exception as e:
-                     event.error_message = str(e)
-                     event.retry_count += 1
-                     event.save()
+                     repo.mark_outbox_event_failed(event.id,e)
                      logger.error(f"Faliled to broadcast event {event.id} : {e}")
 
-
-       

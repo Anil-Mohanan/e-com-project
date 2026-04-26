@@ -1,90 +1,40 @@
-from .models import Product, ProductImages, ProductVariant, Category, Review, InventoryUnit
-from django.db import transaction
+from . import repositories as default_repo
 import logging
-import uuid
+
 
 logger = logging.getLogger('product')
 
-def get_product_price(product_id: int, variant_id: int = None) -> float:
+def get_product_price(product_id: int, variant_id: int = None, repo = default_repo) -> float:
+
+       return repo.get_product_price(product_id,variant_id)
+
+def reserve_inventory(product_id:int,quantity:int, variant_id: int = None, repo = default_repo) -> bool:
        
-       product = Product.objects.get(id = product_id)
+       return repo.reserve_inventory(product_id,quantity,variant_id)
 
-       final_price = product.price
-
-       if variant_id:
-     
-              product_variant = ProductVariant.objects.get(id = variant_id)
+def deduct_inventory_for_order(items_data,repo = default_repo):
        
-              final_price += product_variant.price_adjustment
-
-       return final_price
-
-def reserve_inventory(product_id:int,quantity:int, variant_id: int = None) -> bool:
-       with transaction.atomic():
-              product = Product.objects.select_for_update().get(id = product_id)
-
-              if product.stock < quantity: 
-                     return False
-              inventoryunit = InventoryUnit.objects.select_for_update().filter(product_id = product_id, variant_id = variant_id, status = 'In Stock')[:quantity]
-
-
-              for units in inventoryunit:
-                     units.status = 'Reserved'
-                     units.save()
-              product.stock -= quantity
-              product.save()
-
-              return True
-
-def deduct_inventory_for_order(items_data):
-       product_ids = [item ['product_id'] for item in items_data] # getting only the product_id from the dict items_data. items_data contain [{"product_id": 1 , "quantity" : 2} {"product_id: 10" , "quantity": 1}] that are marked cart in the order 
-       products = Product.objects.select_for_update().filter(id__in = product_ids ).order_by('id') #Getting the products that from the db using that ids.
-       locked_products_dict = {p.id: p for p in products} # this will look like this locked_products_dict =    2: "Shirt",5: "Shoes",8: "Watch" }
-       for item in items_data:
-              product = locked_products_dict[item['product_id']]
-              available_units = list(InventoryUnit.objects.select_for_update().filter(product_id = item ['product_id'], status = 'In Stock')[:item['quantity']])
-              if len(available_units) < item['quantity']:
-                     raise ValueError(f"Sorry , {product.name} is out of stock.")
-              for unit in available_units:
-                     unit.status = 'Sold'
-              InventoryUnit.objects.bulk_update(available_units,['status'])
-              product.stock -= item['quantity']
-              product.save()
-
-       return {p.id:p.price for p in products}
+       return repo.deduct_inventory_for_order(items_data)
        
-def restore_inventory_for_order(items_data):
-       product_ids = [item ['product_id'] for item in items_data]
+def restore_inventory_for_order(items_data,repo = default_repo):
 
-       products = Product.objects.select_for_update().filter(id__in = product_ids).order_by('id')
-
-       locked_products_dict = {p.id: p for p in products}
-
-       for item in items_data:
-              product = locked_products_dict[item['product_id']]
-
-              sold_units = list(InventoryUnit.objects.select_for_update().filter(product_id = item ['product_id'],status = 'Sold')[:item['quantity']])
-
-              for unit in sold_units:
-                     unit.status = 'In Stock'
-              InventoryUnit.objects.bulk_update(sold_units,['status'])
-              product.stock += len(sold_units)
-              product.save()
+       return repo.restore_inventory_for_order(items_data)
 
 
 
-def add_review_process(product,user,rating,comment):
-       reveiw = Review.objects.create(
-                     product = product,
-                     user = user,
-                     rating= rating,
-                     comment = comment
-              )
-       logger.info(f"User {user.id} added a {rating}-star review to product {product.id}")
+def add_review_process(product_id, user_id, rating, comment, repo=default_repo):
+    if repo.user_already_reviewed(product_id, user_id):
+        raise ValueError("You have already reviewed this Product")
+        
+    if not repo.user_has_purchased(product_id, user_id):
+        raise ValueError("You can only review products you have purchased.")
+        
+    repo.create_review(product_id, user_id, rating, comment)
+    logger.info(f"User {user_id} added a {rating}-star review to product {product_id}")
+    return True
 
-       return reveiw
 
-def build_comparison_matrix(product_ids_string):
+def build_comparison_matrix(product_ids_string,repo = default_repo):
        try:
               id_list = [int(i.strip()) for i in product_ids_string.split(',')]
        except (ValueError, AttributeError):
@@ -96,7 +46,7 @@ def build_comparison_matrix(product_ids_string):
        if len(id_list) > 4:
               raise ValueError("You can only compare up to 4 products at a time.")
        
-       products = Product.objects.filter(id__in= id_list,is_active=True)
+       products = repo.get_product_by_ids(id_list)
 
        if len(products) < 2:
               raise ValueError("Need at least 2 valid products to compare.")
@@ -127,41 +77,13 @@ def build_comparison_matrix(product_ids_string):
 
        return comparsion_data
 
-def get_product_details(product_id: int) -> dict:
+def get_product_details(product_id: int, reop = default_repo) -> dict:
        
-       product = Product.objects.get(id=product_id)
-
-       return {
-              "name": product.name,
-              "price" : product.price
-       }
-
-def add_product_stock(product_id, quantity, variant_id=None): # Add variant_id
-    if quantity <= 0:
-       raise ValueError("Quantity must be positive and grater than zero")
-
-    with transaction.atomic():
-       product = Product.objects.select_for_update().get(id=product_id)
+       reop.get_product_details(product_id)
        
-       # 1. Logic for Variant Support
-       variant = None
-       if variant_id:
-           variant = ProductVariant.objects.get(id=variant_id)
-           # If your variant has its own stock field, update it here too!
-           # variant.stock += quantity
-           # variant.save()
-       # 2. Create units WITH the variant link
-       units = [
-            InventoryUnit(
-                product=product, 
-                variant=variant, 
-                status='In Stock',
-                serial_number=f"SN-{uuid.uuid4().hex[:10].upper()}" # Generate a unique SN
-            ) 
-            for _ in range(quantity)
-        ]
-       InventoryUnit.objects.bulk_create(units)
-       
-       # 3. Update the main counter
-       product.stock += quantity
-       product.save()
+
+def add_product_stock(product_id, quantity, variant_id=None,repo = default_repo): # Add variant_id
+
+       repo.add_product_stock(product_id,quantity,variant_id)
+
+

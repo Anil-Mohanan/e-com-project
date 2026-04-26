@@ -1,3 +1,4 @@
+from django.core.mail import message
 from django.shortcuts import render
 from rest_framework import viewsets, permissions, parsers,filters,status
 from rest_framework.response import Response
@@ -89,26 +90,17 @@ class ProductViewSet(viewsets.ModelViewSet):
               data = request.data
              
               # 1. Verification: Already reviewed?
-              if product.reviews.filter(user=user).exists():
-                     return error_response(message="You have already reviewd this Product", status_code=400)
-        
-              # 2. Verification: Did they actually buy it? (NO INDENTATION HERE)
-              had_bought = ProductPurchaseHistory.objects.filter(user_id=user.id, product=product).exists()
-        
-              if not had_bought:
-                     # USE error_response, NOT Response. And 'message', NOT 'messages'
-                     return error_response(
-                            message='You can only reiview products you have purchased.',
-                            status_code=400
+              try:
+                     review = add_review_process(
+                            product_id = product.id,
+                            user_id = user.id,
+                            rating= data.get('rating',0),
+                            comment = data.get('comment','')
                      )
-              review = add_review_process(
-                     product = product,
-                     user = user,
-                     rating= data.get('rating',0),
-                     comment = data.get('comment','')
-              )
-              if review:                  
-                     return success_response(message="Review added Successfully", status_code=201)
+                     if review:                  
+                            return success_response(message="Review added Successfully", status_code=201)
+              except ValueError as e:
+                     return error_response(message = str(e),status_code = 400)
 
              
        @cache_response(key_prefix="product_list",error_message="Unable to Load Products")

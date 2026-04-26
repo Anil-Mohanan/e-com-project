@@ -9,7 +9,6 @@ from django.views.decorators.csrf import csrf_exempt # To disable seccurity ceck
 from django.utils.decorators import method_decorator # To apply the csrf_exempt decoratero to a class view
 from config.utils import error_response ,success_response
 import logging
-from django.db import transaction
 from .services import create_stripe_checkout,handle_stripe_event
 from .tasks import process_stripe_webhook_task
 stripe.api_key = settings.STRIPE_SECRET_KEY# verfining the Stripe keys 

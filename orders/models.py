@@ -1,4 +1,5 @@
-from email.policy import default
+from .domain import ShippingStrategy, StandardShippingStrategy, IndianGSTStrategy
+from .domain import calculate_order_total
 from django.db import models
 from django.conf import settings
 from decimal import Decimal
@@ -61,25 +62,24 @@ class Order(models.Model):
        is_paid = models.BooleanField(default=False)
        paid_at = models.DateTimeField(auto_now_add=False , null = True, blank=True)
 
-       def calculate_total(self):#Grand tootal (Subtotal + Tax + Shipping)
-              return self.subtotal + self.tax_amount + self.shipping_fee
-
        def __str__(self):
               return f"Orders {self.order_id} - {self.user.email} ({self.status})"
+
        @property
        def subtotal(self):#price of items only
               return sum(item.total_price for item in self.items.all())
        @property
        def tax_amount(self):#tax calculation
-              return self.subtotal * Decimal('0.18')
+              strategy = IndianGSTStrategy()
+              return strategy.calculate_tax(self.subtotal)
        @property
        def shipping_fee(self):#shipping fee over 1500
-              if self.subtotal == 0: # if the cart is empty (0) , shipping is 0
-                     return 0
-              if self.subtotal > 1500:
-                     return 0
-              else: 
-                     return 100
+             strategy = StandardShippingStrategy()
+             return strategy.calculate_fee(self.subtotal)
+       
+       def calculate_total(self):
+              return calculate_order_total(self.subtotal,StandardShippingStrategy(),IndianGSTStrategy())
+
        def save(self,*args,**kwargs):
               # calling the parent to carete the row in the DB (We need an ID!)
 

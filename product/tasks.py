@@ -1,7 +1,7 @@
 from celery import shared_task
 from celery import current_app
 from .services import deduct_inventory_for_order,restore_inventory_for_order
-from .models import ProductPurchaseHistory
+from . import repositories as default_repo
 from .search_services import rebuild_search_index
 import logging
 
@@ -29,16 +29,14 @@ def handle_order_placed_event(payload):
               )
 
 @shared_task(name = "product.handle_order_completed")
-def handle_order_completed_event(payload): #product/views.py and look at your add_review endpoint.
+def handle_order_completed_event(payload,repo = default_repo): #product/views.py and look at your add_review endpoint.
        user_id = payload.get('user_id')
        items_data = payload.get('items',[])
 
        for item in items_data:
               try:
-                     ProductPurchaseHistory.objects.get_or_create(
-                            user_id = user_id,
-                            product_id = item['product_id']
-                     )
+                     repo.record_product_purchase(user_id,item['product_id'])
+
               except Exception as e:
                      logger.error(f"CQRS faild to record purchase for user {user_id} : {e}")
 
@@ -49,5 +47,5 @@ def handle_order_cancelle_event(payload):
        restore_inventory_for_order(items_data)
 
 @shared_task
-def task_rebuild_search_index():
-       rebuild_search_index()
+def task_rebuild_search_index(repo = default_repo):
+       rebuild_search_index(repo)
