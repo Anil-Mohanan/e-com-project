@@ -8,8 +8,8 @@ from .emails import(
 )
 from django.utils import timezone
 from datetime import timedelta
-from orders.services import cancel_order_process ,confirm_order_payment
-from orders import repositories as default_repo
+
+from orders.repositories import core as default_repo
 import logging 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ def task_release_unpaid_orders(repo=default_repo):
        cutoff_time = timezone.now() - timedelta(minutes=15)
        orders = repo.get_unpaid_pending_orders(cutoff_time)
        for order_entity in orders:
+              from orders.services import cancel_order_process
               cancel_order_process(order_entity.order_id,repo = repo)
 
 @shared_task
@@ -94,6 +95,7 @@ def handle_inventory_failed(payload,repo=default_repo):
 
               if order_entity.status == "Pending":
                      logger.warning(f"SAGA Rollback: Cancelling Order {order_id} becasue Inventory Faild. Reason: {reason}") 
+                     from orders.services import cancel_order_process
                      cancel_order_process(order_id,repo = repo)
 
        except ValueError:
@@ -105,8 +107,10 @@ def handle_payment_confirm(payload,repo=default_repo):
        
        order_id = payload.get("order_id")
        
-       try:
+       try:   
+              from orders.services import  confirm_order_payment
               confirm_order_payment(order_id,repo = repo)
+
               logger.warning(f"Payment logic executed for Order {order_id}")
        except ValueError as e:
               logger.warning(f"Could not confirm payment for {order_id}: {e}")

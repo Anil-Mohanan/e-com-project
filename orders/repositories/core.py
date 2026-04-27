@@ -91,7 +91,8 @@ def get_unpaid_pending_orders(cutoff_time):
 def get_order_email_data(order_id) -> OrderEmailDTO:
 
        try:
-              order = Order.objects.select_related('user','shipping_address').preftech_rleated('items_product').get(order_id = order_id)
+              order = Order.objects.select_related('user', 'shipping_address').prefetch_related('items__product').get(order_id=order_id)
+
        except Order.DoesNotExist:
               raise ValueError("Order Not Found")
 
@@ -115,9 +116,6 @@ def get_order_email_data(order_id) -> OrderEmailDTO:
        payment_method=payment_method
        )
 
-def get_or_create_cart(user):
-       cart, created = Order.objects.get_or_create_cart(user)
-       return cart, created
        
 #------------ ORDER WRITES ---------- #
 

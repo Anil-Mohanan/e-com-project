@@ -68,14 +68,13 @@ MIDDLEWARE = [
     'config.middleware.ReqeustTimeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'user_auth.middleware.UpdateLastActivityMiddleware',
+    'user_auth.infrastructure.middleware.UpdateLastActivityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'analytics.middleware.AuditLogMiddleware',
+    'analytics.infrastructure.middleware.AuditLogMiddleware',
     'config.middleware.GlobalExceptionMiddleware',
 ]
 
@@ -178,7 +177,7 @@ from datetime import timedelta
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'user_auth.backends.CustomJWTAuthentication',
+        'user_auth.infrastructure.backends.CustomJWTAuthentication',
     ),
     # ADD THESE LINES FOR PAGINATION AND FILTERING:
     'DEFAULT_FILTER_BACKENDS': (
@@ -301,7 +300,7 @@ LOGGING = {
     },
 }
 AUTHENTICATION_BACKENDS = [
-    'user_auth.backends.CaseInsensitiveModelBackend', 
+    'user_auth.infrastructure.backends.CaseInsensitiveModelBackend', 
     'django.contrib.auth.backends.ModelBackend', # Fallback
 ]
 # import sys

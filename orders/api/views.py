@@ -43,7 +43,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
               quantity = int(request.data.get('quantity',1))
               try:
-                     order,item = add_to_cart_process(
+                     order = add_to_cart_process(
                             user=request.user,
                             product_id=product_id,
                             quantity=quantity,
@@ -51,7 +51,8 @@ class OrderViewSet(viewsets.ModelViewSet):
               except ObjectDoesNotExist:
                      return error_response(message = "Product not found",status_code=404)
 
-              serializer = self.get_serializer(order)
+              order_model = Order.objects.get(order_id=order.order_id)
+              serializer = self.get_serializer(order_model)
 
               cache.delete(f"user_cart_{request.user.id}")
 
@@ -71,7 +72,8 @@ class OrderViewSet(viewsets.ModelViewSet):
               except OrderItem.DoesNotExist:
                      return error_response(message = "Item not in Cart",status_code = 404)
 
-              serializer = self.get_serializer(order)
+              order_model = Order.objects.get(order_id=order.order_id)
+              serializer = self.get_serializer(order_model)
               cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
               
@@ -89,7 +91,8 @@ class OrderViewSet(viewsets.ModelViewSet):
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
                      return error_response(message = 'Item  Not Found', status_code = 404)
               
-              serializer = self.get_serializer(order)# in this line what is get_serializer and what is order 
+              order_model = Order.objects.get(order_id=order.order_id)
+              serializer = self.get_serializer(order_model)# in this line what is get_serializer and what is order 
               cache.delete(f"user_cart_{request.user.id}")
               return Response(serializer.data)
        
@@ -101,7 +104,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
               try:
                      order = process_checkout(user = request.user, address_id= address_id)
-                     return Response(self.get_serializer(order).data)
+                     order_model = Order.objects.get(order_id=order.order_id)
+                     return Response(self.get_serializer(order_model).data)
                      
               except Order.DoesNotExist:
                      return error_response(message =  'no cart and no pending order', status_code = 404)
@@ -119,9 +123,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
               order = get_user_cart(request.user)
               
-              sync_order_prices(order)
+              sync_order_prices(order.order_id)
 
-              serializer = self.get_serializer(order)
+              order_model = Order.objects.get(order_id=order.order_id)
+              serializer = self.get_serializer(order_model)
 
               return Response(serializer.data)
 
@@ -139,7 +144,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return error_response(message = "Invalid Status",status_code = 400)
               
               order = update_status_process(
-                     order = order,
+                     order_id = order.order_id,
                      new_status = new_status
               )
               
@@ -158,7 +163,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                      return error_response(message="Cannot Cancel order. It might be already Shipped or deliverd",status_code=400)
               try:
                      order = cancel_order_process(
-                     order = order
+                     order_id = order.order_id
                      )
                      return success_response(message="Order cancelled Successfully",data={'new_status': 'cancelled'},status_code=200)
               except Exception as e:
@@ -177,7 +182,7 @@ class OrderViewSet(viewsets.ModelViewSet):
               if order.is_paid:
                      return success_response(message="Order is already Paid")
 
-              mark_as_paid_process(order=order)
+              mark_as_paid_process(order_id=order.order_id)
               
               return success_response(message = "Payment confirmed",data ={'isPaid': True})
        

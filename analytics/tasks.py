@@ -1,8 +1,8 @@
 from celery import shared_task
 from django.core.cache import cache
 from orders.services.analytics import get_dashboard_order_metrics
-from product.analytics_services import get_active_products_count
-from .user_services import get_total_customers_count
+from product.services import get_active_products_count
+from analytics.services import get_total_customers_count
 import logging
 
 logger = logging.getLogger(__name__)

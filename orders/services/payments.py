@@ -1,8 +1,9 @@
-from . import repositories as default_repo
-from . import domain
-from orders.infrastructure.tasks import task_send_payment_success_email
+from orders.repositories import core as default_repo
+from orders import domain
 
 def get_order_details_for_payment(order_id , user,repo=default_repo):
+       from .core import sync_order_prices
+       sync_order_prices(order_id, repo=repo)
        
        order_entity = repo.get_order_for_user(order_id, user.id)
        

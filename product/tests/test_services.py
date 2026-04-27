@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from product.services import get_product_price, build_comparison_matrix,reserve_inventory,deduct_inventory_for_order,add_product_stock,restore_inventory_for_order,get_product_details
+from product.services.services import get_product_price, build_comparison_matrix,reserve_inventory,deduct_inventory_for_order,add_product_stock,restore_inventory_for_order,get_product_details
 from product.tests.factories import ProductFactory, ProductVariantFactory,InventoryUnitFactory
 from product.models import InventoryUnit,Product
 

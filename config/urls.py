@@ -17,17 +17,17 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     
     # 1. Auth URLs (Register, Logout, Password Reset)
-    re_path(f'{api_prefix}auth/', include('user_auth.urls')),
+    re_path(f'{api_prefix}auth/', include('user_auth.api.urls')),
 
     # 2. Login URLs (The ones you thought were missing!)
     # re_path(f'{api_prefix}auth/login/$', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     # re_path(f'{api_prefix}/auth/refresh/$', TokenRefreshView.as_view(), name='token_refresh'),
 
     # 3. App URLs
-    re_path(f'{api_prefix}', include('product.urls')),
+    re_path(f'{api_prefix}', include('product.api.urls')),
     re_path(f'{api_prefix}', include('orders.api.urls')),
-    re_path(f'{api_prefix}payments/',include('payments.urls')),
-    re_path(f'{api_prefix}analytics/', include('analytics.urls')),
+    re_path(f'{api_prefix}payments/',include('payments.api.urls')),
+    re_path(f'{api_prefix}analytics/', include('analytics.api.urls')),
 ]
 
 if settings.DEBUG:

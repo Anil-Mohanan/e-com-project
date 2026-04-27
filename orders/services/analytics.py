@@ -1,4 +1,4 @@
-from .import repositories as default_repo
+from orders.repositories import core as default_repo
 
 def get_dashboard_order_metrics(repo=default_repo):
        return repo.get_dashboard_order_metrics()

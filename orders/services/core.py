@@ -1,6 +1,4 @@
-from rest_framework.generics import RetrieveUpdateAPIView
-from . import repositories as default_repo
-from orders.domain import calculate_order_total
+from orders.repositories import core as default_repo
 from product.services import get_product_details, get_product_price
 from orders.infrastructure.tasks import (
        task_send_payment_success_email,

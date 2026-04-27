@@ -1,8 +1,7 @@
 from celery import shared_task
 from celery import current_app
-from .services import deduct_inventory_for_order,restore_inventory_for_order
-from . import repositories as default_repo
-from .search_services import rebuild_search_index
+from product.repositories import core  as default_repo
+from product.services import rebuild_search_index ,deduct_inventory_for_order ,restore_inventory_for_order
 import logging
 
 logger = logging.getLogger(__name__)
