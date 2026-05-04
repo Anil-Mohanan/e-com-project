@@ -1,13 +1,16 @@
+from rest_framework.decorators import permission_classes
+from django.urls import path
 from rest_framework import generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from .serializers import UserRegistrationSerializer, UserSerializer, CustomTokenObtainPairSerializer
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView,TokenRefreshView
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from config.utils import error_response, success_response
 from user_auth.services import verify_email_process , get_user_active_sessions, revoke_device_access,process_user_registration
+from django.conf import settings
 import dataclasses
 
 import logging
@@ -67,7 +70,7 @@ class DeleteAccountView(APIView):
               
 class VerifyEmailView(APIView):
 
-       def get(self,request,uidb64,token):
+       def get(self,request,uidb64,token,*args,**kwargs):
               try:
                      is_verified = verify_email_process(uidb64, token)
                      
@@ -82,8 +85,70 @@ class VerifyEmailView(APIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
        """custom loig Ve that use custom serialzer to check for email verification and update last login time """
-
        serializer_class = CustomTokenObtainPairSerializer
+       def post(self, request, *args, **kwargs):
+              refresh_token = request.COOKIES.get('refresh_token')
+              if refresh_token:
+            # Inject the cookie value into the request data for the parent class
+                     request.data['refresh'] = refresh_token
+        
+              response = super().post(request, *args, **kwargs)
+        
+              if response.status_code == 200:
+                     access_token = response.data.get('access')
+                            # Set the new access token in the cookie
+                     response.set_cookie(
+                     key='access_token',
+                     value=access_token,
+                     httponly=True,
+                     secure=not settings.DEBUG,
+                     samesite='Lax',
+                     path='/'
+                     )
+
+                     response.set_cookie(
+                            key='refresh_token',
+                            value=response.data.get('refresh'),
+                            httponly = True,
+                            secure = not settings.DEBUG,
+                            samesite = 'Lax',
+                            path = '/'
+                     )       
+            # Remove the token from the response body
+              del response.data['access']
+              del response.data['refresh']
+            
+              return response
+       
+
+class CustomTokenRefreshView(TokenRefreshView):
+       def post(self, request, *args, **kwargs):
+              # trying to get the refresh token from the cookie
+              refresh_token = request.COOKIES.get('refresh_token')
+
+              if refresh_token:
+                     #if it exists , puting it into the reqeust data so the parent class can find it
+                     request.data['refresh'] = refresh_token
+
+              # calling the parent login to genereate a new access token
+              response = super().post(request,*args,**kwargs)
+
+              if response.status_code == 200:
+                     # if successful, set the new access token in a cookie
+                     response.set_cookie(
+                            key = 'access_token',
+                            value = response.data.get('access'),
+                            httponly=True,
+                            secure=not settings.DEBUG,
+                            samesite = "Lax",
+                            path= '/'
+                     )
+                     del response.data['access']
+              
+              return response
+
+
+
 
 class ActiveSessionView(APIView):
        permission_classes = [IsAuthenticated]

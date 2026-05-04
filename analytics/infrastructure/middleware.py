@@ -1,5 +1,6 @@
 from analytics.models import AuditLog
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from analytics.tasks import log_api_request_task
 
 import logging
 
@@ -11,6 +12,14 @@ class AuditLogMiddleware:
               self.get_response = get_response
 
        def __call__(self,request):
+
+              if request.path.startswith('/admin/') or request.path.startswith('/static/') or request.path.startswith('/media/'):
+                     # It stops the unnecessary database writing by using a concept called an "Early Return" (also known as a "Guard Clause").
+                     return self.get_response(request)
+
+              if request.method == 'GET' and request.path.startswith('/api/products/'):
+
+                     return self.get_response(request)
 
               response = self.get_response(request)
               user_id = None
@@ -33,12 +42,10 @@ class AuditLogMiddleware:
               status_code = response.status_code 
               ip_address = request.META.get('REMOTE_ADDR')
 
-              AuditLog.objects.create(
-                      user_id= user_id,
-                      Path= path,
-                      method= method,
-                      status_code= status_code,
-                      ip_address= ip_address
-              )
+              try:
+                     log_api_request_task.delay(user_id,path,method,status_code,ip_address)
+              except Exception as e:
+
+                     logger.error(f"Celery task failed: {e}")
 
               return response

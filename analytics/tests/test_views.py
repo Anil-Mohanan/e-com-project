@@ -4,7 +4,7 @@ from rest_framework import status
 from product.tests.factories import ProductFactory
 from user_auth.tests.factories import UserFactory
 from django.contrib.auth import get_user_model
-from analytics.user_services import get_total_customers_count
+from analytics.services import get_total_customers_count
 from orders.tests.factories import OrderFactory
 from django.utils import timezone
 from datetime import timedelta

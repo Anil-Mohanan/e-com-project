@@ -1,11 +1,19 @@
+from math import exp
 from orders.repositories import core as default_repo
 from product.services import get_product_details, get_product_price
-from orders.infrastructure.tasks import (
-       task_send_payment_success_email,
-       task_send_order_confirmation_email,
-       task_send_shipping_email,
-       task_cancellation_email
+from orders.events import (
+    order_event_bus,
+    OrderPlaced,
+    OrderCancelled,
+    OrderPaid,
+    OrderShipped,
 )
+from product.events import product_event_bus, ProductAddedToCart
+# ↑ This is cross-domain publishing — the ORDERS service fires a PRODUCT event.
+# This is valid. The orders service OWNS the cart action (it's the publisher).
+# The product domain OWNS the reaction (it's the subscriber/handler).
+from analytics.services import record_admin_action
+from django.db import transaction
 from django.core.cache import cache
 import logging
 
@@ -19,43 +27,43 @@ def process_checkout(user,address_id,repo=default_repo):
        if not cache.add(lock_key,"locked",timeout=15):
               raise ValueError("Checkout already in progress. Please wait.")
        
-       try:
-              existing =  repo.get_pending_order_for_user(user.id)
-              if existing:
-                     return existing
+       try:   
+              with transaction.atomic():
+                     existing =  repo.get_pending_order_for_user(user.id)
+                     if existing:
+                            return existing
 
+
+                     #Get the cart
+                     cart_entity = repo.get_cart(user)
+
+                     for item in cart_entity.items:
+
+                            live_price = get_product_price(item.product_id,variant_id=item.variant_id)
+
+                            repo.set_item_price(cart_entity.order_id, item.product_id,live_price)
+
+
+                     repo.checkout_order(cart_entity.order_id, address_id, user)       
+                     logger.info(f"Order {cart_entity.order_id} successfully processed for user {user.id}")
+
+                     # EDA: Out Box publisher ---
+                     # Instead of synchronously calling the product.services to decut inventory (which can carsh),
+                     # Saving an event tot the outbox . The Background worker will pic k this up.
+
+                     items_data = repo.get_order_items_data(cart_entity.order_id)
+
+                     payload = {
+                            'order_id' : cart_entity.order_id,
+                            'items' : items_data
+                     }
+
+                     order_event_bus.publish(OrderPlaced(payload=payload))
+
+                     return repo.get_order_by_id(cart_entity.order_id)              
+       except Exception as e:
+              logger.error(f"Checkout failed for user {user.id}: {e}")
               
-              #Get the cart
-              cart_entity = repo.get_cart(user)
-                    
-              for item in cart_entity.items:
-                            
-                     live_price = get_product_price(item.product_id,variant_id=item.variant_id)
-
-                     repo.set_item_price(cart_entity.order_id, item.product_id,live_price)
-
-
-              repo.checkout_order(cart_entity.order_id, address_id, user)       
-              logger.info(f"Order {cart_entity.order_id} successfully processed for user {user.id}")
-                    
-              # EDA: Out Box publisher ---
-              # Instead of synchronously calling the product.services to decut inventory (which can carsh),
-              # Saving an event tot the outbox . The Background worker will pic k this up.
-
-              items_data = repo.get_order_items_data(cart_entity.order_id)
-
-              payload = {
-                     'order_id' : cart_entity.order_id,
-                     'items' : items_data
-              }
-
-              repo.create_outbox_event('order.placed',payload)
-
-              
-              task_send_order_confirmation_email.delay(cart_entity.order_id)
-
-              return repo.get_order_by_id(cart_entity.order_id)
-
        finally:
               cache.delete(lock_key)
 
@@ -70,8 +78,15 @@ def add_to_cart_process(user, product_id, quantity,repo=default_repo):
 
     repo.add_item_to_cart(cart.order_id, product_id, product_details['name'], quantity)
 
-    return repo.get_cart(user)
+    product_event_bus.publish(ProductAddedToCart(
+       payload={
+              "product_id": product_id,
+              "user_id": user.id,
+              "quantity": quantity,
+       }
+    ))
 
+    return repo.get_cart(user)
               
 def update_quantity_process(user,product_id,quantity,repo=default_repo):
               cart = repo.get_cart(user)
@@ -86,12 +101,25 @@ def remove_item_process(user,product_id,repo=default_repo):
 
               return order
 
-def update_status_process(order_id,new_status,repo=default_repo):
+def update_status_process(order_id,new_status,actor = None,repo=default_repo):
 
+       order_entity = repo.get_order_by_id(order_id)
+       
        repo.save_order_status(order_id, new_status)
+
+       record_admin_action(
+              actor_id=getattr(actor, 'id', None),
+              actor_email = getattr(actor, 'email', 'system'),
+              action = 'order.status_changed',
+              target_id = order_id,
+              old_value = {'status': order_entity.status},
+              new_value = {'status': new_status},
+       )
               
        if new_status == "Shipped":
-             task_send_shipping_email.delay(order_id)
+             payload = {"order_id": order_id}
+             order_event_bus.publish(OrderShipped(payload= payload))
+
 
        return repo.get_order_by_id(order_id)
 
@@ -99,6 +127,8 @@ def cancel_order_process(order_id,repo=default_repo):
 
        order_entity = repo.get_order_by_id(order_id)
 
+       if order_entity.status not in ["Pending", "Paid"]:
+              raise  ValueError("Order cannot be cancelled in its current state")
 
        if order_entity.status == 'Cancelled':
               return order_entity
@@ -114,10 +144,11 @@ def cancel_order_process(order_id,repo=default_repo):
               "items" : items_data
        }
 
-       repo.create_outbox_event('order.cancelled',payload)
+       
        
        logger.info(f"Order {order_entity.order_id} was cancelled successfully. Stock restored.")
-       task_cancellation_email.delay(order_entity.order_id)
+       order_event_bus.publish(OrderCancelled(payload = payload))
+
 
        return repo.get_order_by_id(order_id)
 
@@ -130,18 +161,17 @@ def mark_as_paid_process(order_id,repo=default_repo):
 
        logger.info(f"Admin marked Order {order_entity.order_id} as paid manually.")
 
-       #Trigger Eamil: Payment Success
-
-       task_send_payment_success_email.delay(order_entity.order_id)
+       
 
        items_data = repo.get_order_items_data(order_id)
 
        payload = {
               "order_id": order_entity.order_id,
-              "items" : items_data
+              "items" : items_data,
+              "user_id": order_entity.user_id
        }
 
-       repo.create_outbox_event('order.completed',payload)
+       order_event_bus.publish(OrderPaid(payload = payload))
        
        return repo.get_order_by_id(order_id)
 

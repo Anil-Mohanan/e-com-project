@@ -1,3 +1,4 @@
+from django.template.defaultfilters import default
 from django.db import models
 from django.utils.text import slugify
 from user_auth.models import User
@@ -106,7 +107,8 @@ class InventoryUnit(models.Model):
        product = models.ForeignKey(Product,related_name='inventory_units',on_delete=models.CASCADE)
        variant = models.ForeignKey(ProductVariant,related_name='inventory_units',on_delete=models.CASCADE,null=True,blank=True)
        serial_number = models.CharField(max_length=100,unique=True,db_index=True) # db_index = True make the serial_number index 
-       status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='in Stock',db_index=True)
+       status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='In Stock',db_index=True)
+       current_order_id = models.UUIDField(null = True, blank = True, db_index = True)
        date_added = models.DateTimeField(auto_now_add=True)
 
        def __str__(self):
@@ -136,4 +138,74 @@ class ProductPurchaseHistory(models.Model):
               unique_together = [['user_id','product']]
 
 
+
+class ProductBehaviorLog(models.Model):
+       """Stores raw user interaction events for the behavior analytics engine.
+              user_id is IntegerField (not FK) so that Store None for not logged in users
+       """
+       EVENT_CHOICES = (
+              ('product.viewed','Product Viewed'), # User Opened a Product Detail page
+              ('product.searched','Product Searched'),# User ran a search query
+              ('product.added_to_cart','Product Added To Cart'), #User put Product in their cart
+       )
+
+       event_type = models.CharField(max_length = 50,choices = EVENT_CHOICES, db_index = True) # db_index true becuase analytics will GROUP By envet_type constantily
+
+       product_id = models.IntegerField(null = True, blank = True, db_index = True) # null_true Becasue search events have no single Product
+
+       user_id = models.IntegerField(null = True, blank = True, db_index = True)
+       #null for anonymous (not logged in) users
+
+       session_key = models.CharField(max_length = 40, null = True, blank = True)# browser session ID to track anonymous behaviro
+       
+       metadata = models.JSONField(default = dict, blank = True) # Flexible: stores search query, quantity added , etc.
+
+       created_at = models.DateTimeField(auto_now_add=True,db_index = True) # Indexed for time-range analytics (e.g, trending this week)
+
+       class Meta:
+              indexes = [
+                     # Compound index: "All views for product X in date range" - one fast query
+                     models.Index(fields=['product_id','event_type','created_at']),
+              ]
+       
+       def __str__(self):
+              return f"{self.event_type} | product = {self.product_id} | user = {self.user_id}"
+
+
+
+
+class ProductRecommendation(models.Model):
+       """
+       Pre-computed 'Customers also viewed recommendation. 
+       Written nightly Celery Beat. Read instantly by the API.
+       This table is the performance layer - instead of querying millions of 
+       behavior log rows on every request, serving one fast lookup.       
+       """
+
+       source_product = models.ForeignKey(
+              Product,
+              on_delete=models.CASCADE,
+              related_name='recommendations',
+       )# the product the user is currently viewing 
+
+       recommended_product = models.ForeignKey(
+              Product,
+              on_delete=models.CASCADE,
+              related_name = 'recommended_in',
+       )# The product suggested along side iter
+
+       score = models.FloatField(default=0.0) # the socre of how well the recommondation is
+
+       computed_at = models.DateTimeField(auto_now=True)
+
+       class Meta:
+              unique_together = [['source_product', 'recommended_product']]
+              # prevents duplicate pairs. if the task runs twice , it updates
+
+              ordering = ['-score']
+              # Higest score recommedation first.
+
+       def __str__(self):
+              return f"{self.source_product.name} -> {self.recommended_product.name} (score: {self.score})"
+              
 

@@ -71,7 +71,7 @@ def create_outbox_event(event_type,payload):
 
 def get_unprocessed_outbox_events():
 
-       events = PaymentEventOutbox.objects.filter(processed = False, retry_count_lt = 5,).order_by('created_at')
+       events = PaymentEventOutbox.objects.filter(processed = False, retry_count__lt = 5,).order_by('created_at')
 
        return [
               PaymentEventEntity(id = e.id, event_type=e.event_type,payload=e.payload) for e in events

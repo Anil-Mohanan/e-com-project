@@ -1,5 +1,6 @@
 from celery import shared_task
 from django.core.cache import cache
+from analytics.models import AuditLog
 from orders.services.analytics import get_dashboard_order_metrics
 from product.services import get_active_products_count
 from analytics.services import get_total_customers_count
@@ -27,3 +28,15 @@ def precompute_dashboard_statistics():
 
        except Exception as e:
               logger.error(f"scheduled dashboard pre-comutation failed: {e}")
+
+              
+@shared_task
+def log_api_request_task(user_id, path, method, status_code, ip_address):
+
+       AuditLog.objects.create(
+               Path= path,
+               method= method,
+               status_code= status_code,
+               ip_address= ip_address,
+               user_id= user_id,
+       )

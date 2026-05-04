@@ -2,6 +2,7 @@ import json
 from django.core.cache import cache
 from product.repositories import core as default_repo
 from product.domain import SearchStrategy, RedisSearchStrategy
+from product.events import product_event_bus, ProductSearched
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,13 +32,28 @@ def rebuild_search_index(repo = default_repo):
 
 
 
-def fast_search_catalog(search_term, strategy: SearchStrategy = RedisSearchStrategy(), repo=default_repo):
+def fast_search_catalog(search_term, strategy: SearchStrategy = RedisSearchStrategy(), repo=default_repo, user_id = None, session_key = None):
 
 
        """
        DEPENDENCY INVERSION: The service doesn't care if it's Redis or Postgres!
        """
-       return strategy.search(search_term, repo)
+       results = strategy.search(search_term, repo)
+
+       # Only track non-empty search terms - don't log blank queries
+
+       if search_term and search_term.strip():
+
+              product_event_bus.publish(ProductSearched(payload={
+                     "query" : search_term.strip(),
+                     "user_id": user_id,
+                     "session_key": session_key,
+                     "result_count" : len(results) if isinstance(results, list) else 0,
+              }))
+
+       return results
+
+
 
        
 

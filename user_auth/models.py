@@ -114,3 +114,16 @@ class UserDeviceSession(models.Model):
 
        def __str__(self):
               return f"{self.user.email} - {self.device_name}"
+
+class AuthEventOutbox(models.Model):
+       event_type = models.CharField(max_length = 255)
+       
+       payload = models.JSONField()
+       created_at = models.DateTimeField(auto_now_add=True)
+       processed = models.BooleanField(default=False,db_index=True)
+       processed_at = models.DateTimeField(null = True, blank = True)
+       error_message = models.TextField(null  = True)
+       retry_count = models.PositiveIntegerField(default=0)
+       def __str__(self):
+              return f"{self.event_type} - {self.processed}"
+       

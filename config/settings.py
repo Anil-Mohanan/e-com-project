@@ -33,6 +33,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG') == 'True'
 
+# line 34: DEBUG = os.environ.get('DEBUG') == 'True'
+
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
+
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost 127.0.0.1').split(' ')
 
 
@@ -176,8 +182,10 @@ AUTH_USER_MODEL = 'user_auth.User'
 from datetime import timedelta
 
 REST_FRAMEWORK = {
+
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'user_auth.infrastructure.backends.CustomJWTAuthentication',
+        'user_auth.api.authenticate.CookieJWTAuthentication', # Use our new cookie logic
+        'rest_framework.authentication.SessionAuthentication',
     ),
     # ADD THESE LINES FOR PAGINATION AND FILTERING:
     'DEFAULT_FILTER_BACKENDS': (
@@ -309,6 +317,8 @@ AUTHENTICATION_BACKENDS = [
 #     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {}
 
 # BANNED_IPS = ['127.0.0.1'] this is used to work the IP block MIDDLEWARE
+ 
+CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -348,11 +358,11 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/15'),  # Runs every 15 minutes
     },
     'repair-orders-every-5-minutes': {
-        'task': 'orders.tasks.task_release_unpaid_orders',
+        'task': 'orders.infrastructure.tasks.task_release_unpaid_orders',
         'schedule': crontab(minute='*/5'),  # Runs every 5 minutes
     },
     'sweep-outbox-every-5-seconds':{
-        'task': 'orders.tasks.sweep_order_outbox',
+        'task': 'orders.infrastructure.tasks.sweep_order_outbox',
         'schedule': 5.0, 
     },
     'sweep-payment-outbox-every-5-seconds':{
@@ -362,7 +372,15 @@ CELERY_BEAT_SCHEDULE = {
     'task-rebuild-search-index-every-10-minitus':{
         'task' : 'product.tasks.task_rebuild_search_index',
         'schedule' : crontab(minute='*/10')
-    }
+    },
+        'sweep-auth-outbox-every-10-seconds': {
+        'task': 'user_auth.tasks.sweep_auth_outbox',
+        'schedule': 10.0,
+    },
+    'compute-recommendation-nightly': {
+        'task': 'product.compute_recommendations',
+        'schedule':crontab(hour=2,minute = 0),
+    },
 }
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
@@ -371,3 +389,10 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # WARNING: Set these to True ONLY when you deploy to a live HTTPS server.
 # SESSION_COOKIE_SECURE = True
 # CSRF_COOKIE_SECURE = True
+
+if DEBUG:
+    EMAIL_BACKEND= 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'mailpit'
+    EMAIL_PORT = 1025
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

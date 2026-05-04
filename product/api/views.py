@@ -12,7 +12,13 @@ from django.db.models import Avg, Count
 from config.utils import error_response, success_response
 from config.cache_utils import cache_response
 from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
-from product.services import add_review_process, build_comparison_matrix,fast_search_catalog
+from product.services import (
+    add_review_process,
+    build_comparison_matrix,
+    fast_search_catalog,
+    get_trending_products_service,
+    get_related_products_service,
+)
 import logging
 
 
@@ -83,7 +89,7 @@ class ProductViewSet(viewsets.ModelViewSet):
               
               
        @action(detail=True, methods=['post'],permission_classes = [permissions.IsAuthenticated])  # set detail True for to foucse on one speicifc item . write permission_classes inside action to over ride the defualt IsAuthenticated . Reviwes return by Customers not Sellers
-       def add_review(self,request,slug=None,**kwargs):
+       def add_review(self,request,*args,**kwargs):
               product = self.get_object() # get the product based on the slug in URL
               user = request.user
               data = request.data
@@ -102,22 +108,30 @@ class ProductViewSet(viewsets.ModelViewSet):
                      return error_response(message = str(e),status_code = 400)
 
              
-       @cache_response(key_prefix="product_list",error_message="Unable to Load Products")
+       @cache_response(key_prefix="product_list",error_message="Unable to Load Products",allowed_params=['category', 'brand', 'ordering', 'page'])
        def list(self,request,*args, **kwargs):
               response = super().list(request,*args, **kwargs)
               return response
 
-       @cache_response(key_prefix="product_detail",error_message="Product not Found")      
+       @cache_response(key_prefix="product_detail",error_message="Product not Found",allowed_params=[])      
        def retrieve(self, request, *args, **kwargs):
               try:
                      instance = self.get_object()
               except Exception:
                      return error_response(message = "Product not found", status_code = 404)
+              #pass tracking context to the service so it can fire the ProductViewed event.
+              # get_the_product_details now handle the event publishing internally
+              from product.services import get_product_details
+              get_product_details(
+                     product_id=instance.id,
+                     user_id = request.user.id if request.user.is_authenticated else None,
+                     session_key = request.session.session_key,
+              )
               serializer = self.get_serializer(instance)
               data = serializer.data
               return Response(data) 
        
-       
+       @cache_response(key_prefix="product_compare", allowed_params=['ids'])
        @action(detail=False,methods=['get'],permission_classes=[permissions.AllowAny])
        def compare(self,request,**kwargs):
               products_ids_string = request.query_params.get('ids')
@@ -135,9 +149,83 @@ class ProductViewSet(viewsets.ModelViewSet):
        @action(detail = False, methods =['get'],permission_classes = [permissions.AllowAny])
        def instant_search(self,request,*args,**kwargs):
               search_term = request.query_params.get('q','')
-              results = fast_search_catalog(search_term)
+              results = fast_search_catalog(search_term,
+              user_id = request.user.id if request.user.is_authenticated else None,
+              session_key = request.session.session_key,
+
+              )
 
               return success_response(message='Search complete', status_code=200,data=results)
+
+       @action(detail=False, methods=['get'],permission_classes=[permissions.AllowAny])
+       def trending(self,request, *args, **kwargs):
+              """
+              GET /api/products/trending/?days = 7&limit=10 Reutrns the most-viewed products
+              in the last N days.
+              Anyone can see this - it's public catalog data.
+       
+              """
+              days = int(request.query_params.get('days',7))
+              limit = int(request.query_params.get('limit',10))
+
+              data = get_trending_products_service(days = days,limit=limit)
+
+              return success_response(message = "Trending products", status_code=200, data = data)
+       
+       @action(detail = True, methods=['get'],permission_classes=[permissions.AllowAny])
+       def related(self, request, *args, **kwargs):
+           """
+           GET /api/products/{slug}/related/
+           Returns products frequently viewed in the same session as this product.
+           This is the "Customers also viewed..." recommendation.
+           detail=True because we operate on one specific product.
+           """
+           product = self.get_object()
+           days = int(request.query_params.get('days', 30))
+           limit = int(request.query_params.get('limit', 5))
+           data = get_related_products_service(
+               product_id=product.id,
+               days=days,
+               limit=limit,
+           )
+           return success_response(message="Related products", status_code=200, data=data)
+
+       def perform_update(self, serializer):
+              """
+              Intercepts product updates (PUT/PATCH) before they hit the database.
+              We capture the old values, save the new values, and if price or stock
+              changed, we log it to the AdminActionLog.
+              """
+              # 1. Capture old values BEFORE saving
+              old_price = serializer.instance.price
+              old_stock = serializer.instance.stock
+              
+              # 2. Save the changes to the database
+              new_instance = serializer.save()
+              
+              # 3. Check for price changes
+              if old_price != new_instance.price:
+                  from analytics.services import record_admin_action
+                  record_admin_action(
+                      actor_id=self.request.user.id,
+                      actor_email=self.request.user.email,
+                      action='product.price_changed',
+                      target_id=new_instance.slug,
+                      old_value={'price': str(old_price)},   # str() because Decimal is not JSON serializable
+                      new_value={'price': str(new_instance.price)}
+                  )
+                  
+              # 4. Check for stock changes
+              if old_stock != new_instance.stock:
+                  from analytics.services import record_admin_action
+                  record_admin_action(
+                      actor_id=self.request.user.id,
+                      actor_email=self.request.user.email,
+                      action='product.stock_adjusted',
+                      target_id=new_instance.slug,
+                      old_value={'stock': old_stock},
+                      new_value={'stock': new_instance.stock}
+                  )
 
 class CategoryViewSet(viewsets.ModelViewSet):
        
@@ -154,12 +242,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
               else:
                      return [permissions.IsAdminUser()]
 
-       @cache_response(key_prefix="category_list",error_message="Unable to Fetch Categories at this time")
+       @cache_response(key_prefix="category_list",error_message="Unable to Fetch Categories at this time",allowed_params=[])
        def list(self,request,*args, **kwargs):
               response = super().list(request,*args, **kwargs)
               return response
 
-       @cache_response(key_prefix="category_detail",error_message="Category not Found")
+       @cache_response(key_prefix="category_detail",error_message="Category not Found",allowed_params= [])
        def retrieve(self, request, *args, **kwargs):
               instance = self.get_object() # This is the "Search" step. It uses the slug and the queryset you defined at the top of the class to find the exact row in your database. 
               serializer = self.get_serializer(instance) # what is this line is for 
@@ -183,12 +271,12 @@ class ProductVariantViewSet(viewsets.ReadOnlyModelViewSet):
               return self.queryset
 
 
-       @cache_response(key_prefix="product_variant_list",error_message="Unable to fetch Product Variant")
+       @cache_response(key_prefix="product_variant_list",error_message="Unable to fetch Product Variant",allowed_params=[])
        def list(self, request,*args, **kwargs):
               response = super().list(request,*args, **kwargs)
               return response
 
-       @cache_response(key_prefix="product_variant_detail", error_message="This Variant is not Avalible")
+       @cache_response(key_prefix="product_variant_detail", error_message="This Variant is not Avalible",allowed_params=[])
        def retrieve(self, request, *args, **kwargs):
               instance = self.get_object()
               serializer = self.get_serializer(instance)
@@ -217,14 +305,14 @@ class ReviewViewSet(viewsets.ModelViewSet):
               return Review.objects.none()
        
        http_method_names = ['get', 'put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive 
-       @cache_response(key_prefix="review_list",error_message="Unable to show the Review")
+       @cache_response(key_prefix="review_list",error_message="Unable to show the Review",allowed_params=['product','page','rating','ordering'])
        def list(self,request,*args, **kwargs):
                 
               response = super().list(request,*args, **kwargs)
              
               return response
 
-       @cache_response(key_prefix="review_detail",error_message="Review Not Found")
+       @cache_response(key_prefix="review_detail",error_message="Review Not Found",allowed_params=[])
        def retrieve(self, request, *args, **kwargs):
               
               instance = self.get_object()

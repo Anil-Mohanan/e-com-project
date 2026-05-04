@@ -1,3 +1,4 @@
+from _pytest.pytester import rex_outcome
 from rest_framework import serializers
 from orders.models import Order , OrderItem, ShippingAddress
 from datetime import timedelta
@@ -38,3 +39,19 @@ class OrderSerializer(serializers.ModelSerializer):
  
               
               
+class CartSerializer(serializers.ModelSerializer):
+
+       items = OrderItemSerializer(many = True, read_only = True )
+
+       class Meta:
+              model = Order
+              fields = ['order_id', 'items', 'subtotal', 'total_price']
+
+
+class CheckoutInputSerializer(serializers.Serializer):
+
+       address_id = serializers.IntegerField(required = True)
+       
+       def validate_address_id(self,value):
+
+              return value

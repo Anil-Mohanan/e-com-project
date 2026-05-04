@@ -1,6 +1,10 @@
+from orders.domain import IndianGSTStrategy
+from orders.domain import StandardShippingStrategy
+from decimal import Decimal
+from orders.domain import calculate_order_total
 from orders.models import Order, OrderItem , ShippingAddress, OrderEventOutbox
 from orders.domain import OrderItemEntity, OrderEntity, OrderEventEntity, OrderEmailDTO, OrderEmailItemDTO
-from django.db.models import Sum
+from django.db.models import Sum ,F
 from django.db.models.functions import TruncDate, TruncMonth
 from django.db import transaction
 from django.utils import timezone
@@ -155,6 +159,21 @@ def checkout_order(order_id, address_id, user):
               except (Order.DoesNotExist, ShippingAddress.DoesNotExist):
                      raise ValueError("Order or shipping address not found")
 
+def update_order_total(order_id):
+
+       with transaction.atomic():
+
+              order = Order.objects.select_for_update().get(order_id = order_id)
+
+              res = OrderItem.objects.filter(order= order).aggregate(total = Sum(F('price_at_purchase') * F('quantity')))
+
+              subtotal_val = res.get('total') or Decimal('0.00')
+
+              total_price = calculate_order_total(subtotal_val,StandardShippingStrategy(),IndianGSTStrategy())
+
+              order.total_price = total_price
+
+              order.save(update_fields = ['total_price'])
 
 # -------------ITEM OPERATIONS ------------- #
 
@@ -172,7 +191,7 @@ def add_item_to_cart(order_id, product_id, product_name, quantity):
                             item.quantity = quantity
 
                      item.save()
-                     order.save()
+                     update_order_total(order_id)
 
 
                      return item.id, created
@@ -190,7 +209,7 @@ def update_item_quantity(order_id,product_id,quantity):
                      else:
                             item.quantity = quantity
                             item.save()
-                     order.save()
+                     update_order_total(order_id)
 
                      return _to_entity(order)
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
@@ -205,7 +224,7 @@ def delete_item(order_id,product_id):
                      item  = OrderItem.objects.get(order = order,product_id = product_id)
 
                      item.delete()
-                     order.save()
+                     update_order_total(order_id)
                      return _to_entity(order)
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
                      raise ValueError("Order or item not found")
@@ -218,6 +237,7 @@ def set_item_price(order_id,product_id,price):
 
               item.price_at_purchase = price
               item.save()
+              update_order_total(order_id)
        except (Order.DoesNotExist, OrderItem.DoesNotExist):
               raise ValueError("Order or item not found")
 

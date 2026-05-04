@@ -1,4 +1,5 @@
 from product.repositories import core as default_repo
+from product.events import product_event_bus, ProductViewed
 import logging
 
 
@@ -12,13 +13,13 @@ def reserve_inventory(product_id:int,quantity:int, variant_id: int = None, repo 
        
        return repo.reserve_inventory(product_id,quantity,variant_id)
 
-def deduct_inventory_for_order(items_data,repo = default_repo):
+def deduct_inventory_for_order(items_data,order_id,repo = default_repo):
        
-       return repo.deduct_inventory_for_order(items_data)
+       return repo.deduct_inventory_for_order(items_data,order_id)
        
-def restore_inventory_for_order(items_data,repo = default_repo):
+def restore_inventory_for_order(items_data,order_id,repo = default_repo):
 
-       return repo.restore_inventory_for_order(items_data)
+       return repo.restore_inventory_for_order(items_data,order_id)
 
 
 
@@ -77,9 +78,20 @@ def build_comparison_matrix(product_ids_string,repo = default_repo):
 
        return comparsion_data
 
-def get_product_details(product_id: int, repo=default_repo) -> dict:
-       return repo.get_product_details(product_id)
+def get_product_details(product_id: int, repo=default_repo,user_id = None, session_key = None) -> dict:
+
+       #user_id and session_key are optional - views pass them for behavior tracking
+       result = repo.get_product_details(product_id)
+
+       #Firing the behaviro event. None for not logged in users is acceptable.
+
+       product_event_bus.publish(ProductViewed(payload={
+              "product_id": product_id,
+              "user_id": user_id,
+              "session_key" : session_key,
+       }))
        
+       return result
 
 def add_product_stock(product_id, quantity, variant_id=None,repo = default_repo): # Add variant_id
 

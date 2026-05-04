@@ -20,3 +20,5 @@ debug.log
 .vscode/
 
 .agents/
+
+.aiexclude

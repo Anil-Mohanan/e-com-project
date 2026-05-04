@@ -116,14 +116,8 @@ class OrderItem(models.Model):
         # If the price is locked (Order is placed), use that.
         # If the price is NOT locked (Still in Cart), use the LIVE product price.
        return (self.price_at_purchase or 0) * self.quantity
-@receiver(post_save, sender=  OrderItem)
-@receiver(post_delete, sender=OrderItem)
-def update_order_total(sender,instance, **kwargs):
-       """
-    When an Item is added/modified/deleted, tell the Parent Order to re-save.
-    Re-saving triggers the 'save()' method above, which updates the price.
-    """
-       instance.order.save()
+
+
     
 
 class OrderEventOutbox(models.Model): # Event Box that store the Even in SQL in case the redis failed the event stits here safily

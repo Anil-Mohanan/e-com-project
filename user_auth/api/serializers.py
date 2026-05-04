@@ -76,6 +76,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                      ip_address = ip,
                      device_name = device
               )
+              data['user'] = {
+                     'id': self.user.id,
+                     'email': self.user.email,
+                     'first_name': self.user.first_name,
+                     'last_name': self.user.last_name,
+                     'is_seller': self.user.is_seller
+              }
               return data
        @classmethod
        def get_token(cls,user):

@@ -1,6 +1,9 @@
 from django.db import transaction
-from product.models import Product, ProductVariant, InventoryUnit, Review,ProductPurchaseHistory
+from product.models import Product, ProductVariant, InventoryUnit, Review,ProductPurchaseHistory,ProductBehaviorLog
 from product.domain import ProductDTO
+from django.db.models import Count
+from django.utils import timezone
+from datetime import timedelta
 import uuid
 
 # ==========================================
@@ -20,9 +23,17 @@ def _to_entity(product) -> ProductDTO:
 # ==========================================
 # Analytics & Search Repository Methods
 # ==========================================
-
 def get_active_products_count():
     return Product.objects.filter(is_active=True).count()
+
+def get_all_product_ids():
+    """
+    Returns a flat list of all active product IDs.
+    The nightly task iterates over this list to compute recommendations.
+    Only active products — no point recommending unavailable items.
+    """
+
+    return list(Product.objects.filter(is_active = True).values_list('id', flat = True))
 
 def get_low_stock_products():
     low_stock = Product.objects.filter(stock__lte=5, is_active=True)
@@ -95,6 +106,7 @@ def add_product_stock(product_id, quantity, variant_id):
        product.save()
 
 def reserve_inventory(product_id, quantity, variant_id):
+    
     with transaction.atomic():
        product = Product.objects.select_for_update().get(id=product_id)
        if product.stock < quantity: 
@@ -114,53 +126,64 @@ def reserve_inventory(product_id, quantity, variant_id):
        product.save()
        return True
 
-def deduct_inventory_for_order(items_data):
-    product_ids = [item['product_id'] for item in items_data]
-    products = Product.objects.select_for_update().filter(id__in=product_ids).order_by('id')
-    locked_products_dict = {p.id: p for p in products}
+def deduct_inventory_for_order(items_data,order_id):
+
+    with transaction.atomic():
+            product_ids = [item['product_id'] for item in items_data]
+            products = Product.objects.select_for_update().filter(id__in=product_ids).order_by('id')
+            locked_products_dict = {p.id: p for p in products}
+
+            all_units_to_update = []
+
+            for item in items_data:
+                product = locked_products_dict[item['product_id']]
+                product.stock -= item['quantity']
+                available_units = list(InventoryUnit.objects.select_for_update().filter(product_id=item['product_id'],status='In Stock')[:item['quantity']])
+                all_units_to_update.extend(available_units)
+
+                if len(available_units) < item['quantity']:
+                   raise ValueError(f"Sorry, {product.name} is out of stock.")
+
+                for unit in available_units:
+                    unit.status = 'Sold'
+                    unit.current_order_id = order_id
+                    
+                    
+            InventoryUnit.objects.bulk_update(all_units_to_update, ['status','current_order_id'])
+            Product.objects.bulk_update(products, ['stock'])
     
-    for item in items_data:
-       product = locked_products_dict[item['product_id']]
-       available_units = list(InventoryUnit.objects.select_for_update().filter(
-           product_id=item['product_id'], 
-           status='In Stock'
-       )[:item['quantity']])
-       
-       if len(available_units) < item['quantity']:
-           raise ValueError(f"Sorry, {product.name} is out of stock.")
-           
-       for unit in available_units:
-           unit.status = 'Sold'
-           
-       InventoryUnit.objects.bulk_update(available_units, ['status'])
-       product.stock -= item['quantity']
-       product.save()
 
-    return {p.id: p.price for p in products}
+            return {p.id: p.price for p in products}
 
-def restore_inventory_for_order(items_data):
-    product_ids = [item['product_id'] for item in items_data]
-    products = Product.objects.select_for_update().filter(id__in=product_ids).order_by('id')
-    locked_products_dict = {p.id: p for p in products}
+def restore_inventory_for_order(items_data,order_id):
 
-    for item in items_data:
-       product = locked_products_dict[item['product_id']]
-       sold_units = list(InventoryUnit.objects.select_for_update().filter(
-           product_id=item['product_id'],
-           status='Sold'
-       )[:item['quantity']])
-       for unit in sold_units:
-           unit.status = 'In Stock'
-           
-       InventoryUnit.objects.bulk_update(sold_units, ['status'])
-       product.stock += len(sold_units)
-       product.save()
+    with transaction.atomic():
+
+        product_ids = [item['product_id'] for item in items_data]
+        products = Product.objects.select_for_update().filter(id__in=product_ids).order_by('id')
+        locked_products_dict = {p.id: p for p in products}
+
+        all_units = []
+
+        for item in items_data:
+            product = locked_products_dict[item['product_id']]
+            sold_units = list(InventoryUnit.objects.select_for_update().filter(product_id=item['product_id'],current_order_id = order_id))
+            product.stock += len(sold_units)
+            all_units.extend(sold_units)
+            for unit in sold_units:
+                unit.status = 'In Stock'
+                unit.current_order_id = None
+                
+
+        InventoryUnit.objects.bulk_update(all_units, ['status','current_order_id'])
+        Product.objects.bulk_update(products,['stock'])
 
 # ==========================================
 # Task 
 # ==========================================
 
 def record_product_purchase(user_id,product_id):
+
        ProductPurchaseHistory.objects.get_or_create(
               user_id = user_id,
               product_id = product_id
@@ -172,7 +195,182 @@ def record_product_purchase(user_id,product_id):
 # ==========================================
 
 def user_already_reviewed(product_id, user_id):
+
        return Review.objects.filter(product_id = product_id,user_id = user_id).exists()
 
 def user_has_purchased(product_id,user_id):
+
        return ProductPurchaseHistory.objects.filter(product_id = product_id,user_id = user_id).exists()
+
+
+
+#==========================================
+#Behaviro Analytics Repository Methods
+#==========================================
+
+def get_trending_products(days = 7 , limit = 10):
+    """Question: What products are users viewing the most this week?
+
+        filter ProductBehaviorLog to the last N days, count views per product,
+        order by view count descending, and return the top N product IDs with counts.
+        .values('product_id') -> Group BY product_id
+        .annotate(view_count = Count('id')) -> COUNT(*) per group
+
+    """
+    since = timezone.now() - timedelta(days = days)
+
+    return list(
+        ProductBehaviorLog.objects.filter(event_type = 'product.viewed',created_at__get = since, product_id__isnull = False).values('product_id').annotate(view_count = Count('id')).order_by('-view_count')[:limit]
+    )
+
+def get_cart_abandonment_data(days= 30, min_views=3):
+    """
+        Which products are viewd a lot but rarely added to cart
+        Hight views + low cart adds = price problem , trust problem, or bad UX.
+        Compute the ratio: cart_adds/ views. Lower ratio = more abandoned.
+        
+        return products where view count exceeds min_views threshold,don't flag products that were just viewed once or twice.
+
+    """
+    since = timezone.now() - timedelta(days = days)
+
+    views = (
+        ProductBehaviorLog.objects.filter(event_type = 'prodcut.viewed',created_at__gte =since, product_id__isnull = False).values('product_id').annotate(view_count=Count('id'))
+    )
+    cart_adds = (
+        ProductBehaviorLog.objects.filter(
+            event_type = 'product.added_to_cart',created_at__get = since, product_id__isnull = False
+        ).values('product_id').annotate(cart_count = Count('id'))
+    )
+
+    # build a look up dict so that can merge the two querysets in pyhon
+    # Djanog ORM Cannot easily JOIN two aggregated querysets directily
+
+    views_dict = {row['product_id']: row['view_count'] for row in views}
+    cart_dict = {row['product_id']: row['cart_count'] for row in cart_adds}
+
+    result = []
+
+    for product_id, view_count in views_dict.items():
+        if view_count < min_views:
+            continue # ignore products with too few views to be meaningful
+        cart_count = cart_dict.get(product_id,0)
+        # conversion_rate: what % of viewers also added to cart
+
+        conversion_rate = round((cart_count/ view_count) * 100, 1)
+
+        result.append({
+            'product_id': product_id,
+            'view_count': view_count,
+            'cart_count': cart_count,
+            'conversion_rate': conversion_rate,
+        })
+
+    # Sort by conversion_rate ascending - most abandoned prodcuts first
+
+    return sorted(result, key= lambda x: x['conversion_rate'])
+
+def get_zero_result_searches(days = 30, limit= 20):
+    """What are users searching for that reutrns nothing
+    Theser are categlog gaps - products should be stocking.
+    filter for search events where result_conut is metadata is 0,
+    then count how many time each query was searched.
+    """
+
+    since = timezone.now() - timedelta(days = days)
+
+    return list(
+        ProductBehaviorLog.objects.filter(
+            event_type = 'product.searched',
+            created_at__gte = since,
+            metadata_result_count = 0,
+            # JONSField lookup - queries the metadata Json key
+        ).values('metadata__query')#group by query string inside the JSON
+        .annotate(search_count = Count('id'))
+        .order_by ('-search_count')[:limit]
+    )
+
+def get_frequently_viewed_together(product_id, days=30, limit=5):
+    """
+    Question: What other products do users look at in the same session?
+    
+    We find all session_keys that viewed this product,
+    then find what OTHER products those same sessions also viewed.
+    This gives us "customers who viewed this also viewed..." data.
+    
+    This is a 2-step query:
+    Step 1: Find all sessions that viewed the target product
+    Step 2: Find all OTHER products those sessions viewed
+    """
+    since = timezone.now() - timedelta(days=days)
+    # Step 1: get session keys of users who viewed this product
+    sessions_that_viewed = (
+        ProductBehaviorLog.objects
+        .filter(
+            event_type='product.viewed',
+            product_id=product_id,
+            created_at__gte=since,
+            session_key__isnull=False,  # only sessions we can track
+        )
+        .values_list('session_key', flat=True)
+        .distinct()
+    )
+    if not sessions_that_viewed:
+        return []
+    # Step 2: find other products those same sessions viewed
+    return list(
+        ProductBehaviorLog.objects
+        .filter(
+            event_type='product.viewed',
+            session_key__in=sessions_that_viewed,
+            created_at__gte=since,
+        )
+        .exclude(product_id=product_id)  # exclude the product itself
+        .values('product_id')
+        .annotate(co_view_count=Count('id'))
+        .order_by('-co_view_count')[:limit]
+    )
+
+
+#==================================================
+# Recommendation Repository Methods
+#==================================================
+
+def save_recommendations(source_product_id,recommendations):
+    """
+    Writes pre-computed recommendations to the ProductRecommendation table.
+    Called only by the nightly Celery task - never by a live request.
+    'recommedation' is a list of dicts: [{'product_id': X, 'score': Y.Z},....]
+
+    """
+
+    from product.models import ProductRecommendation # Local import to avoid circular import at module load time
+
+    for rec in recommendations:
+        #update_or_create: if the pair already exists, update score + computed_at.
+        # if it's new , create it . This make the task safely re-runnable (idempontent).
+
+        ProductRecommendation.objects.update_or_create(
+            source_product_id = source_product_id,
+            recommended_product_id = rec['product_id'],# The product being recommended
+            defaults = {'score': rec['score']} # only 'score' is updated if the row already exists
+        )
+
+def get_precomputed_recommendations(product_id,limit = 5):
+
+    """
+    Read pre-computed recommednations from the ProductRecommendation table.
+    This is the fast path - one indexed lookup, no aggregation, no GROUP By.
+    Returns a list of Product_ids orderd by score descending.
+
+    """
+
+    from product.models import ProductRecommendation
+
+    return list(
+        ProductRecommendation.objects.filter(
+            source_product_id = product_id,
+        ).values('recommended_product_id','score') # only need the ID and Score , not the full product Object
+        [:limit] # Slicing the python translates to LIMTI in SQL - no full table scan
+
+    )

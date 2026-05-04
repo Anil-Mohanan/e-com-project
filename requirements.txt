@@ -30,3 +30,4 @@ pytest-django
 factory-boy
 pytest-cov
 bandit
+google-auth==2.27.0

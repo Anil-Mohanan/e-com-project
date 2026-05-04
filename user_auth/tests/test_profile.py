@@ -3,7 +3,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
-from user_auth.serializers import CustomTokenObtainPairSerializer
+from user_auth.api import CustomTokenObtainPairSerializer
 from user_auth.tests.factories import UserFactory
 
 class ProfileAPITests(APITestCase):
