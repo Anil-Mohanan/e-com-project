@@ -10,7 +10,7 @@ class UserFactory(factory.django.DjangoModelFactory):
        email = factory.Sequence(lambda n: f"user_{n}@test.com")
        is_customer = True
        is_seller = False
-       is_email_verified = False
+       is_email_verified = True
        jwt_version = 1
 
        @factory.post_generation

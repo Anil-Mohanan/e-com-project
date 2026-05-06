@@ -247,6 +247,11 @@ STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
 STRIPE_PUBLIC_KEY = env("STRIPE_PUBLIC_KEY")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")
 
+
+PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
+
+HUGGINGFACE_API_KEY = os.environ.get('HUGGINGFACE_API_KEY')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

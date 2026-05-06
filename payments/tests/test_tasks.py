@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from payments.models import PaymentEventOutbox
 from payments.tasks import sweeper_payment_outbox
 import uuid
@@ -62,4 +62,4 @@ def test_process_stripe_webhook_task_calls_service(mock_handle_stripe):
        process_stripe_webhook_task({"event": "fake"})
        
        # 2. ASSERT: Did the Celery task hand the dictionary off to the Service layer?
-       mock_handle_stripe.assert_called_once_with({"event": "fake"})
+       mock_handle_stripe.assert_called_once_with({"event": "fake"},ANY)

@@ -6,14 +6,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.test import override_settings
 
 
-@override_settings(REST_FRAMEWORK={'DEFAULT_THROTTLE_CLASSES': [], 'DEFAULT_THROTTLE_RATES': {}})
-
 class TokenTests(APITestCase):
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             email="token@test.com",
-            password="Password123"
+            password="test.__.@1032.ldsdfs"
         )
 
         self.refresh = RefreshToken.for_user(self.user)

@@ -1,3 +1,4 @@
+from billiard.sharedctypes import Value
 from orders.domain import IndianGSTStrategy
 from orders.domain import StandardShippingStrategy
 from decimal import Decimal
@@ -38,6 +39,8 @@ def _to_entity(order):
               status = order.status,
               is_paid = order.is_paid,
               paid_at = order.paid_at,
+              total_price = order.total_price,
+              shipping_address_id = order.shipping_address_id,
               items = item_entites
        )
 
@@ -148,16 +151,16 @@ def checkout_order(order_id, address_id, user):
               
               try:
                      order = Order.objects.get(order_id = order_id)
+              except Order.DoesNotExist:
+                     raise ValueError("Order not found")
+              try:
+                     address = ShippingAddress.objects.get(user = user, id = address_id)
 
-                     address = ShippingAddress.objects.get(user = user,id = address_id)
-
-                     order.shipping_address = address
-
-                     order.status = "Pending"
-
-                     order.save()
-              except (Order.DoesNotExist, ShippingAddress.DoesNotExist):
-                     raise ValueError("Order or shipping address not found")
+              except ShippingAddress.DoesNotExist:
+                     raise ValueError("Address not found")
+              order.shipping_address = address
+              order.status = "Pending"
+              order.save()
 
 def update_order_total(order_id):
 
@@ -297,3 +300,30 @@ def get_top_selling_products():
        top_products = OrderItem.objects.top_selling()
        return list(top_products) 
 
+
+# --------------- ORDER EVENT STORE (APPEND-ONLY) ------------------------ #
+
+def record_order_event(order_id, event_type: str, payload: dict, actor_id: int = None, actor_type: str = 'system') -> None:
+
+       from orders.models import OrderEvent
+
+       order = Order.objects.get(order_id = order_id)
+
+       # .create() is a single atomic Insert - no update possible
+
+       OrderEvent.objects.create(
+              order = order,
+              event_type = event_type,
+              actor_id = actor_id,
+              actor_type = actor_type, 
+              payload = payload,
+       )
+
+def get_order_event_history(order_id: int)-> list:
+       # .order_by('occured_at') replays events oldest-first (chronological)
+       from orders.models import OrderEvent
+       return list(
+              OrderEvent.objects.filter(order__order_id = order_id)
+              .values('event_type', 'actor_type','actor_id', 'payload', 'occured_at')
+              .order_by('occured_at')
+       )

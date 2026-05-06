@@ -6,34 +6,38 @@ from orders.services import add_to_cart_process, process_checkout,cancel_order_p
 from orders.tests.factories import OrderFactory, OrderItemFactory, ShippingAddressFactory
 from user_auth.tests.factories import UserFactory
 from orders.models import OrderItem, Order, OrderEventOutbox
+from product.tests.factories import ProductFactory
 
 class AddToCartProcessTests(TestCase):
 
        def setUp(self):
               self.user = UserFactory()
-
-       @patch('orders.services.get_product_details') # This is Python magic. It says "When orders.services tries to call get_product_details, intercept it!"
+              self.product = ProductFactory(id=99, price=50.00)
+       @patch('orders.services.core.get_product_details') # This is Python magic. It says "When orders.services tries to call get_product_details, intercept it!"
        def test_add_new_item_to_empty_cart(self,mock_get_details):
               mock_get_details.return_value = {
                      'name' : 'Test Gaming Mouse',
                      'price': '50.00'
               }
 
-              order,item = add_to_cart_process(
-                     user = self.user,
-                     product_id= 99,
-                     quantity= 2
+              order_entity = add_to_cart_process(
+                     user=self.user,
+                     product_id=99,
+                     quantity=2
               )
 
-              self.assertEqual(order.status,'Cart')
-              self.assertEqual(item.product_name,'Test Gaming Mouse')
-              self.assertEqual(item.quantity,2)
-              self.assertEqual(item.product_id,99)
+              self.assertEqual(order_entity.status, 'Cart')
 
-              mock_get_details.assert_called_once_with(99)
+              # Get the first item from the entity's item list
+              item = order_entity.items[0] 
+
+              self.assertEqual(item.product_name, 'Test Gaming Mouse')
+              self.assertEqual(item.quantity, 2)
+              self.assertEqual(item.product_id, 99)
+
 
        # ------------- Edge Case ---------------------- #
-       @patch('orders.services.get_product_details')
+       @patch('orders.services.core.get_product_details')
        def test_add_existing_item_increments_quantity(self,mock_get_details):
 
               mock_get_details.return_value = {
@@ -42,13 +46,15 @@ class AddToCartProcessTests(TestCase):
                      'price' : '50.00'
               }
 
-              add_to_cart_process(user = self.user, product_id=99,quantity=2)
+              add_to_cart_process(user=self.user, product_id=99, quantity=2)
+              
+              order_entity = add_to_cart_process(user=self.user, product_id=99, quantity=3)
+              
+              item = order_entity.items[0]
+              self.assertEqual(item.quantity, 5)
+              # Check the length of the list instead of doing a database .count()
+              self.assertEqual(len(order_entity.items), 1) 
 
-              order,item = add_to_cart_process(user=self.user,product_id=99, quantity=3)
-
-              self.assertEqual(item.quantity,5)
-
-              self.assertEqual(order.items.count(),1)
 
 class ProcessCheckoutTests(TestCase):
 
@@ -58,23 +64,25 @@ class ProcessCheckoutTests(TestCase):
               self.order = OrderFactory(user = self.user, status = 'Cart')
               self.item = OrderItemFactory(order = self.order,product_id = 99, quantity = 2, price_at_purchase = None)
        
-       @patch('orders.services.get_product_details')
+       @patch('orders.services.core.get_product_price')
+       @patch('orders.services.core.get_product_details')
 
-       @patch('orders.services.task_send_payment_success_email.delay')
+       @patch('orders.events.handlers.task_send_order_confirmation_email.delay')
 
-       def test_successful_checkout(self,mock_email_delay,mock_get_details):
+       def test_successful_checkout(self,mock_email_delay,mock_get_details, mock_get_price):
 
               mock_get_details.return_value = {
 
                      'name': 'Test Item',
                      'price': '100.00'
               }
+              mock_get_price.return_value = "100.00"
               with self.captureOnCommitCallbacks(execute=True):
 
                      processed_order = process_checkout(user = self.user,address_id=self.address.id)
 
               self.assertEqual(processed_order.status,'Pending')
-              self.assertEqual(processed_order.shipping_address, self.address)
+              self.assertEqual(processed_order.shipping_address_id, self.address.id)
 
               self.item.refresh_from_db()
 
@@ -95,17 +103,18 @@ class ProcessCheckoutTests(TestCase):
 
        # --------------- Edge Case ----------------- #
 
-       @patch('orders.services.get_product_details')
-       @patch('orders.services.task_send_payment_success_email.delay')
+       @patch('orders.services.core.get_product_price')
+       @patch('orders.services.core.get_product_details')
+       @patch('orders.events.handlers.task_send_order_confirmation_email.delay')
 
-       def test_checkout_returns_existing_pending_order(self,mock_email,mock_get_details):
+       def test_checkout_returns_existing_pending_order(self,mock_email,mock_get_details, mock_get_price):
 
               # 1. SETUP: The user ALREADY has a Pending order in the DB
               existing_order = OrderFactory(user = self.user, status = 'Pending')
               # 2. ACT: They try to checkout again
               result = process_checkout(user = self.user, address_id=self.address.id)
                # 3. ASSERT: It intercepted it and returned the existing one!
-              self.assertEqual(result.id,existing_order.id)
+              self.assertEqual(str(result.order_id),str(existing_order.order_id))
               # Prove it didn't do any new processing (no new messages sent to Outbox!)
               self.assertEqual(OrderEventOutbox.objects.count(),0)
 
@@ -132,11 +141,11 @@ class CancelOrderProcessTests(TestCase):
               self.order = OrderFactory(user = self.user, status = 'Pending')
               self.item = OrderItemFactory(order = self.order,product_id = 99, quantity = 2, price_at_purchase = "100.00")
 
-       @patch('orders.services.task_cancellation_email.delay')
+       @patch('orders.events.handlers.task_cancellation_email.delay')
        def test_successful_cancellation(self,mock_cancel_email):
 
               with self.captureOnCommitCallbacks(execute=True):
-                     canceled_order = cancel_order_process(self.order)
+                     canceled_order = cancel_order_process(self.order.order_id)
 
               self.assertEqual(canceled_order.status,"Cancelled")
 
@@ -148,12 +157,12 @@ class CancelOrderProcessTests(TestCase):
 
               mock_cancel_email.assert_called_once_with(canceled_order.order_id)
 
-       @patch('orders.services.task_cancellation_email.delay')
+       @patch('orders.events.handlers.task_cancellation_email.delay')
        def test_idempotent_cancellation_security(self,mock_cacnel_email):
               
-              cancel_order_process(self.order)
+              cancel_order_process(self.order.order_id)
 
-              cancel_order_process(self.order)
+              cancel_order_process(self.order.order_id)
 
               outbox_count = OrderEventOutbox.objects.filter(event_type = 'order.cancelled').count()
 
@@ -166,11 +175,11 @@ class MarkAsPaidProcessTests(TestCase):
               self.order = OrderFactory(user = self.user, status = 'Pending',is_paid = False,paid_at=None)
               self.itme = OrderItemFactory(order = self.order)
 
-       @patch('orders.services.task_send_payment_success_email.delay')
+       @patch('orders.events.handlers.task_send_payment_success_email.delay')
        def test_successful_payment_processing(self,mock_email):
 
               with self.captureOnCommitCallbacks(execute=True):
-                     paid_order = mark_as_paid_process(self.order)
+                     paid_order = mark_as_paid_process(self.order.order_id)
 
               self.assertTrue(paid_order.is_paid)
               self.assertIsNotNone(paid_order.paid_at)
@@ -183,12 +192,12 @@ class MarkAsPaidProcessTests(TestCase):
 
               mock_email.assert_called_once_with(paid_order.order_id)
 
-       @patch('orders.services.task_send_payment_success_email.delay')
+       @patch('orders.events.handlers.task_send_payment_success_email.delay')
        def test_idempotent_payment_stops_duplicate_emails(self,mock_email):
               with self.captureOnCommitCallbacks(execute=True):
-                     mark_as_paid_process(self.order)
+                     mark_as_paid_process(self.order.order_id)
 
-                     mark_as_paid_process(self.order)
+                     mark_as_paid_process(self.order.order_id)
 
               self.assertEqual(mock_email.call_count,1)
 
@@ -204,8 +213,9 @@ class UpdateQuantityProcessTests(TestCase):
 
        def test_update_quantity_success(self):
               # Act: Change the quantity to 10
-              order, item = update_quantity_process(self.user, product_id=99,quantity=10)
+              order, updated_order_entity = update_quantity_process(self.user, product_id=99,quantity=10)
               
+              item = next(i for i in order.items if i.product_id == 99)
               self.assertEqual(item.quantity,10)
 
        def test_update_quantity_to_zero_deletes_item(self):
@@ -230,13 +240,13 @@ class UpdateStatusProcessTests(TestCase):
 
        def test_update_status_simple(self):
               # Just a normal status update to 'Pending' -> 'Delivered'
-              updated_order = update_status_process(self.order, "Delivered")
+              updated_order = update_status_process(self.order.order_id, "Delivered")
               self.assertEqual(updated_order.status, "Delivered")
 
-       @patch('orders.services.task_send_shipping_email.delay')
+       @patch('orders.events.handlers.task_send_shipping_email.delay')
        def test_update_status_to_shipped_triggers_email(self, mock_shipping_email):
               # Act: Update status exactly to 'Shipped'
-              updated_order = update_status_process(self.order, "Shipped")
+              updated_order = update_status_process(self.order.order_id, "Shipped")
               
               self.assertEqual(updated_order.status, "Shipped")
               # Assert the email task was triggered

@@ -9,7 +9,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.test import override_settings
 
 
-@override_settings(REST_FRAMEWORK={'DEFAULT_THROTTLE_CLASSES': [], 'DEFAULT_THROTTLE_RATES': {}})
+
 
 class DeleteAccountAPITests(APITestCase):
        def test_delete_account_successful(self):
@@ -45,7 +45,7 @@ class DeleteAccountAPITests(APITestCase):
               response = self.client.delete(url)
 
               self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-              self.assertTrue(get_user_model().objects.filter(email=email).exists)
+              self.assertTrue(get_user_model().objects.filter(email=email).exists())
 
 class EmailVerificationTests(APITestCase):
        def test_email_verification_successful(self):

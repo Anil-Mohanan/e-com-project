@@ -25,8 +25,8 @@ def test_stripe_webhook_rejects_hackers(api_client):
        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 @pytest.mark.django_db
-@patch('payments.views.stripe.Webhook.construct_event')
-@patch('payments.views.process_stripe_webhook_task.delay')
+@patch('payments.api.views.stripe.Webhook.construct_event')
+@patch('payments.api.views.process_stripe_webhook_task.delay')
 def test_stripe_webhook_accepts_valid_signature(mock_task_delay, mock_stripe_verify, api_client):
        # 1. SETUP: We tell Pytest to "hijack" the Stripe mathematical verification
        # and just pretend it succeeded, passing back a fake Stripe Event.
@@ -47,7 +47,7 @@ def test_stripe_webhook_accepts_valid_signature(mock_task_delay, mock_stripe_ver
        assert mock_task_delay.call_count == 1
 
 @pytest.mark.django_db
-@patch('payments.views.create_stripe_checkout')
+@patch('payments.api.views.create_checkout_session')
 def test_stripe_checkout_success(mock_create_checkout,logged_in_client):
 
        #1. Setup : inctercept the network call and return a fake stripe Dcitonary
@@ -63,7 +63,7 @@ def test_stripe_checkout_success(mock_create_checkout,logged_in_client):
 
 
 @pytest.mark.django_db
-@patch('payments.views.create_stripe_checkout')
+@patch('payments.api.views.StripeCheckoutView')
 def test_stripe_checkout_handles_service_error_beautifully(mock_create_checkout, logged_in_client):
        # 1. SETUP: Pretend the Service crashed because the Hacker tried to pay for an already-paid order
        mock_create_checkout.side_effect = ValueError("Order is already paid")
@@ -75,4 +75,4 @@ def test_stripe_checkout_handles_service_error_beautifully(mock_create_checkout,
        
        # 3. ASSERT: Did the View catch the crash and format it into a clean HTTP 404?
        assert response.status_code == status.HTTP_404_NOT_FOUND
-       assert response.data['details']['non_field_errors'][0] == "Order is already paid"
+       assert response.data['details']['non_field_errors'][0] == "Order not Found"

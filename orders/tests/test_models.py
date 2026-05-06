@@ -124,7 +124,7 @@ class OrderModelTests(TestCase):
 
               self.variant.save()
 
-              sync_order_prices(order)
+              sync_order_prices(order.order_id)
 
               item.refresh_from_db()
 
@@ -153,7 +153,7 @@ class OrderModelTests(TestCase):
               self.variant.price_adjustment = Decimal('1000.00')
               self.variant.save()
 
-              sync_order_prices(order)
+              sync_order_prices(order.order_id)
 
               item.refresh_from_db()
 

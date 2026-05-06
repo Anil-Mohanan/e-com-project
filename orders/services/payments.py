@@ -8,7 +8,7 @@ def get_order_details_for_payment(order_id , user,repo=default_repo):
        order_entity = repo.get_order_for_user(order_id, user.id)
        
        if order_entity.is_paid:
-              raise ValueError("This order  is already Paid")
+              raise ValueError("This order is already Paid")
 
        return {
               'order_id': order_entity.order_id,

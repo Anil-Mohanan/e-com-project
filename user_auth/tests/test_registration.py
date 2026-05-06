@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.core import mail
+from user_auth.tasks import sweep_auth_outbox
 
 
 @override_settings(REST_FRAMEWORK={'DEFAULT_THROTTLE_CLASSES': [], 'DEFAULT_THROTTLE_RATES': {}})
@@ -66,6 +67,8 @@ class RegistrationAPITest(APITestCase):
               }
 
               self.client.post(url,data,format = 'json')
+
+              sweep_auth_outbox()
               # verify 1 email was sent
               self.assertEqual(len(mail.outbox),1)
               # Verfify the recipent is correct

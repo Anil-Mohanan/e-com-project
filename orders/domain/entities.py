@@ -25,6 +25,8 @@ class OrderEntity:
        status : str
        is_paid : bool
        paid_at : Optional[datetime] = None
+       total_price : Decimal = Decimal('0.00')
+       shipping_address_id : Optional[int] = None
        items: List[OrderItemEntity] = field(default_factory=list)
 
 

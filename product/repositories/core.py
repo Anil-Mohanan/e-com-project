@@ -208,6 +208,17 @@ def user_has_purchased(product_id,user_id):
 #Behaviro Analytics Repository Methods
 #==========================================
 
+def log_product_behavior(event_type:str, product_id: int, user_id: int, session_key: str, metadata: dict = None):
+    # Encapsulates the model creation so services/handlers don't depend on the ORM
+    return ProductBehaviorLog.objects.create(
+        event_type = event_type, 
+        product_id = product_id, 
+        user_id = user_id,
+        session_key = session_key,
+        metadata = metadata or {}
+        # metadata or {} ensure we alwasy save dict even if None is passed
+    )
+
 def get_trending_products(days = 7 , limit = 10):
     """Question: What products are users viewing the most this week?
 

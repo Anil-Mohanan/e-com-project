@@ -25,8 +25,8 @@ class RedisSearchStrategy(SearchStrategy):
               
               catalog = json.loads(cache_catalog)
 
-              if not search_term:
-                     return catalog[:20]
+              if not search_term or not search_term.strip():
+                     return []                     
 
               search_term = search_term.lower()
               result = []

@@ -13,9 +13,10 @@ from django.core.exceptions import ObjectDoesNotExist
 import logging
 
 
+
 logger = logging.getLogger(__name__)
 class CheckoutThrottle(UserRateThrottle):
-       rate = '2/minute'
+       rate = '20/minute'
 
 class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
        permission_classes = [permissions.IsAuthenticated]
@@ -115,7 +116,6 @@ class CheckoutViewSet(viewsets.GenericViewSet):
 
               address_id = serializer.validated_data['address_id']
 
-
               try:
                      order = process_checkout(user = request.user, address_id= address_id)
                      order_model = Order.objects.get(order_id=order.order_id)
@@ -126,7 +126,8 @@ class CheckoutViewSet(viewsets.GenericViewSet):
               except ShippingAddress.DoesNotExist:
                      return error_response(message = 'Invalid Address ID', status_code = 404)
               except ValueError as e:
-                     return error_response(message = str(e), status_code = 400)
+                     status_code = 404 if "not found" in str(e).lower() else 400
+                     return error_response(message=str(e),status_code=status_code)
        
 class OrderHistoryViewset(viewsets.ReadOnlyModelViewSet):
 

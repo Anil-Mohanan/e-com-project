@@ -1,14 +1,17 @@
+from prompt_toolkit.application import current
 import pytest
 from decimal import Decimal
 from product.services import get_product_price, build_comparison_matrix,reserve_inventory,deduct_inventory_for_order,add_product_stock,restore_inventory_for_order,get_product_details
 from product.tests.factories import ProductFactory, ProductVariantFactory,InventoryUnitFactory
 from product.models import InventoryUnit,Product
+import uuid
 
 
 @pytest.mark.django_db
 class TestProductService:
        """Business logic for pricing , comparisons , details
        """
+       
        def test_get_product_price_simple(self):
               p = ProductFactory(price = 500)
               assert float(get_product_price(p.id) == 500)
@@ -69,7 +72,8 @@ class TestInventoryService:
 
               items_data = [{"product_id": p.id, "quantity": 2}]
 
-              prices = deduct_inventory_for_order(items_data)
+              prices = deduct_inventory_for_order(items_data,order_id=uuid.uuid4())
+              
 
               assert prices[p.id] == p.price
 
@@ -92,7 +96,8 @@ class TestInventoryService:
               items_data = [{"product_id": p.id, "quantity": 2}]
 
               with pytest.raises(ValueError) as excinfo:
-                     deduct_inventory_for_order(items_data)
+                     deduct_inventory_for_order(items_data, order_id=uuid.uuid4())
+
 
               assert 'out of stock' in str(excinfo.value)
 
@@ -136,12 +141,14 @@ class TestInventoryService:
               
               # 1. SETUP: Product at 0 stock, with 3 units marked as 'Sold'
               p = ProductFactory(stock=0)
-              InventoryUnitFactory.create_batch(3, product=p, status='Sold')
+              test_order_id = uuid.uuid4()
+              InventoryUnitFactory.create_batch(2, product=p, status='Sold',current_order_id = test_order_id)
               
               items_data = [{"product_id": p.id, "quantity": 2}]
               
               # 2. ACT: Restore 2 units
-              restore_inventory_for_order(items_data)
+              restore_inventory_for_order(items_data, order_id=test_order_id)
+
               
               # 3. ASSERT
               p.refresh_from_db()
@@ -149,20 +156,22 @@ class TestInventoryService:
               
               
               assert InventoryUnit.objects.filter(product=p, status='In Stock').count() == 2
-              assert InventoryUnit.objects.filter(product=p, status='Sold').count() == 1
+              assert InventoryUnit.objects.filter(product=p, status='Sold').count() == 0
 
        def test_restore_inventory_cannot_create_phantom_stock(self):
               """EDGE CASE: Restoring more than we have 'Sold'"""
               from product.services import restore_inventory_for_order
               p = ProductFactory(stock=0)
+              test_order_id = uuid.uuid4()
+
               # We only have ONE sold unit
-              InventoryUnitFactory(product=p, status='Sold')
-              
+              InventoryUnitFactory(product=p, status='Sold',current_order_id = test_order_id)
               # BUT we try to restore TWO
               items_data = [{"product_id": p.id, "quantity": 2}]
               
               # ACT
-              restore_inventory_for_order(items_data)
+              restore_inventory_for_order(items_data, order_id=test_order_id)
+
               
               # ASSERT: Product stock should only be 1 (not 2!)
               p.refresh_from_db()
@@ -177,29 +186,34 @@ class TestReviewService:
               """HAPPY PATH: Create a valid review"""
               from product.services import add_review_process
               from user_auth.tests.factories import UserFactory
-              
+              from product.models import ProductPurchaseHistory
+
               u = UserFactory()
               p = ProductFactory()
+              ProductPurchaseHistory.objects.create(user_id = u.id, product = p)
+              review = add_review_process(p.id, u.id, rating=5, comment="Amazing!")
+
+              assert review is True
               
-              review = add_review_process(p, u, rating=5, comment="Amazing!")
-              
+              from product.models import Review
+              review = Review.objects.get(product=p, user=u)
               assert review.rating == 5
               assert review.comment == "Amazing!"
-              assert review.product == p
-              assert review.user == u
 
        def test_prevent_duplicate_reviews(self):
               """EDGE CASE: One user, one product, one review only"""
               from product.services import add_review_process
               from user_auth.tests.factories import UserFactory
               from django.db import IntegrityError
+              from product.models import ProductPurchaseHistory
               
               u = UserFactory()
               p = ProductFactory()
-              
+              ProductPurchaseHistory.objects.create(user_id = u.id, product = p)
               # 1. Create first review
-              add_review_process(p, u, rating=5, comment="First!")
+
+              add_review_process(p.id, u.id, rating=5, comment="First!")
               
               # 2. ACT & ASSERT: Creating second review for SAME product should CRASH the DB
-              with pytest.raises(IntegrityError):
-                     add_review_process(p, u, rating=1, comment="Spam review!")
+              with pytest.raises(ValueError, match="already reviewed"):
+                     add_review_process(p.id, u.id, rating=1, comment="Spam review!")

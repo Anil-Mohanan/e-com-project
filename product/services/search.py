@@ -42,6 +42,21 @@ def fast_search_catalog(search_term, strategy: SearchStrategy = RedisSearchStrat
 
        # Only track non-empty search terms - don't log blank queries
 
+       if not results and search_term and search_term.strip():
+              from product.services.vector_search import semantic_search
+
+              logger.info(f"No keyword match for '{search_term}' , Falling back to semantic search....")
+
+              semantic_product_ids = semantic_search(query=search_term, top_k=5)
+              # GET the IDs of simplar product from the pinecone
+
+              if semantic_product_ids:
+
+                     products = repo.get_products_for_search_index()
+
+                     results = [p for p in products if p['id'] in semantic_product_ids]
+
+
        if search_term and search_term.strip():
 
               product_event_bus.publish(ProductSearched(payload={

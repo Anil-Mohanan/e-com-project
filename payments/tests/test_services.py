@@ -1,15 +1,13 @@
-from billiard.sharedctypes import Value
-from kombu import uuid
 import pytest
 import uuid
 from unittest.mock import patch
 from django.conf import settings
-from payments.services import create_stripe_checkout , handle_stripe_event
+from payments.services.core import create_checkout_session, handle_stripe_event
 from payments.models import Payment, PaymentEventOutbox
 from user_auth.tests.factories import UserFactory
 
 @pytest.mark.django_db
-@patch('payments.services.get_order_details_for_payment')
+@patch('orders.services.get_order_details_for_payment')
 def test_create_checkout_prevents_double_payment(mock_get_order):
        user = UserFactory()
        order_id = uuid.uuid4()
@@ -25,11 +23,11 @@ def test_create_checkout_prevents_double_payment(mock_get_order):
               "order_id": order_id,
               "total_price": 100.00
        }
-       with pytest.raises(ValueError,match = "This order is already paid"):
-              create_stripe_checkout(user = user, order_id = order_id)
+       with pytest.raises(ValueError,match = "This order is already Paid"):
+              create_checkout_session(user = user, order_id = order_id)
 
 @pytest.mark.django_db
-@patch('payments.services.get_order_details_for_payment')
+@patch('orders.services.get_order_details_for_payment')
 @patch('payments.services.stripe.PaymentIntent.create')
 def test_create_checkout_success(mock_stripe_create,mock_get_order):
        user = UserFactory()
@@ -46,7 +44,7 @@ def test_create_checkout_success(mock_stripe_create,mock_get_order):
        }
        # 2 ACT
 
-       result = create_stripe_checkout(user=user, order_id=order_id)
+       result = create_checkout_session(user=user, order_id=order_id)
 
        # 3 ASSERT: Did it return the exact secret required by React?
 
@@ -61,7 +59,7 @@ def test_create_checkout_success(mock_stripe_create,mock_get_order):
        assert float(payment.amount) == 1500.50
 
 @pytest.mark.django_db
-@patch('payments.services.get_order_details_for_payment')
+@patch('orders.services.get_order_details_for_payment')
 @patch('payments.services.stripe.PaymentIntent.create')
 
 def test_create_checkout_updates_existing_pending_payment(mock_stripe_create,mock_get_order):
@@ -87,7 +85,7 @@ def test_create_checkout_updates_existing_pending_payment(mock_stripe_create,moc
               "client_secret": "secret_xyz"
        }
        # 2. ACT: User clicks "Pay" a second time
-       create_stripe_checkout(user=user, order_id=order_id)
+       create_checkout_session(user=user, order_id=order_id)
        
        # 3. ASSERT: The database MUST NOT have 2 rows for this order! 
        # It must update the existing row, keeping the database perfectly clean.

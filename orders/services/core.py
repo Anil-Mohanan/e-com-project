@@ -33,9 +33,11 @@ def process_checkout(user,address_id,repo=default_repo):
                      if existing:
                             return existing
 
-
                      #Get the cart
                      cart_entity = repo.get_cart(user)
+
+                     if not cart_entity.items:
+                            raise ValueError("Cannot checkout with an empty cart.")
 
                      for item in cart_entity.items:
 
@@ -44,7 +46,19 @@ def process_checkout(user,address_id,repo=default_repo):
                             repo.set_item_price(cart_entity.order_id, item.product_id,live_price)
 
 
-                     repo.checkout_order(cart_entity.order_id, address_id, user)       
+                     repo.checkout_order(cart_entity.order_id, address_id, user)
+                     order_entity = repo.get_order_by_id(cart_entity.order_id)
+                     repo.record_order_event(
+                            order_id = cart_entity.order_id,# the UUID from the entity
+                            event_type = 'order.placed',# the immutable fact name
+                            actor_id = user.id,
+                            actor_type = 'user',
+                            payload = {
+                                   "previous_status": "Cart",
+                                   "new_status": "Pending",
+                                   "total": str(order_entity.total_price),
+                            }
+                     )   
                      logger.info(f"Order {cart_entity.order_id} successfully processed for user {user.id}")
 
                      # EDA: Out Box publisher ---
@@ -55,7 +69,8 @@ def process_checkout(user,address_id,repo=default_repo):
 
                      payload = {
                             'order_id' : cart_entity.order_id,
-                            'items' : items_data
+                            'items' : items_data,
+                            'user_id' : user.id
                      }
 
                      order_event_bus.publish(OrderPlaced(payload=payload))
@@ -63,6 +78,8 @@ def process_checkout(user,address_id,repo=default_repo):
                      return repo.get_order_by_id(cart_entity.order_id)              
        except Exception as e:
               logger.error(f"Checkout failed for user {user.id}: {e}")
+
+              raise e
               
        finally:
               cache.delete(lock_key)
@@ -127,11 +144,11 @@ def cancel_order_process(order_id,repo=default_repo):
 
        order_entity = repo.get_order_by_id(order_id)
 
-       if order_entity.status not in ["Pending", "Paid"]:
-              raise  ValueError("Order cannot be cancelled in its current state")
-
        if order_entity.status == 'Cancelled':
               return order_entity
+
+       if order_entity.status not in ["Pending", "Paid"]:
+              raise  ValueError("Order cannot be cancelled in its current state")
 
        
               #Resotre Stock
@@ -141,7 +158,8 @@ def cancel_order_process(order_id,repo=default_repo):
        
        payload = {
               "order_id": order_entity.order_id,
-              "items" : items_data
+              "items" : items_data,
+              "user_id": order_entity.user_id
        }
 
        

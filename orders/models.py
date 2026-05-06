@@ -130,4 +130,34 @@ class OrderEventOutbox(models.Model): # Event Box that store the Even in SQL in 
        retry_count = models.PositiveIntegerField(default=0)
        
 
+       
+class OrderEvent(models.Model):
 
+       order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='event_log')
+
+       event_type = models.CharField(max_length = 100)
+
+       actor_id = models.IntegerField(null=True, blank=True)
+
+       actor_type = models.CharField(max_length = 20, default='user') #"user" or "system"
+
+       payload = models.JSONField(default=dict) # the full data snapshot and the moment this happend 
+
+       occured_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+       class Meta:
+              
+              ordering = ['occured_at'] # Always read events in chornological Order
+
+              indexes = [
+                     models.Index(fields = ['order', 'occured_at']) # Fast replay queries
+              ]
+
+@receiver([post_save, post_delete], sender=OrderItem)
+def update_order_total_on_item_change(sender, instance, **kwargs):
+       """
+       Signal handler that forces the parent Order to recalculate its total
+       whenever an item is added, updated, or removed.
+       """
+       if instance.order:
+              instance.order.save() # This triggers Order.save() which recalculates total

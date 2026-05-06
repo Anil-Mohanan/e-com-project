@@ -150,7 +150,7 @@ class TestProductReviwes:
               response = logged_in_client['client'].post(url,{"rating":5,"comment": "Good Wroking"})
 
               assert response.status_code == status.HTTP_400_BAD_REQUEST
-              assert "You can only reiview products you have purchased" in str(response.data)
+              assert "You can only review products you have purchased" in str(response.data)
 
        @pytest.mark.django_db
        def test_user_can_review_purchased_product(self,logged_in_client):

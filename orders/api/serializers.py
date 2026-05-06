@@ -45,7 +45,7 @@ class CartSerializer(serializers.ModelSerializer):
 
        class Meta:
               model = Order
-              fields = ['order_id', 'items', 'subtotal', 'total_price']
+              fields = ['order_id', 'items', 'subtotal', 'total_price','status']
 
 
 class CheckoutInputSerializer(serializers.Serializer):

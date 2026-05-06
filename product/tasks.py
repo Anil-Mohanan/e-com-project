@@ -96,3 +96,30 @@ def task_compute_recommendations():
 
        logger.info(f"Recommendation computation complete. {compouted_count} product updated.")
 
+@shared_task(name="product.sync_product_embedding",bind=True, max_retries = 3)
+def task_sync_product_embedding(self, product_id: int, name: str, brand: str, description: str):
+
+       # max_retries=3 — if HuggingFace or Pinecone is temporarily down, Celery will retry 3 times before giving up
+
+       from product.services.vector_search import upsert_product_embedding
+       # only loads when this specific task is actually runs
+
+       try:
+              upsert_product_embedding(
+                     product_id = product_id,
+                     name = name,
+                     brand= brand or "", 
+                     description= description or "", 
+              )
+              #brand or "" - product.brand is nullable in model(null = True , blank = True)
+              # If brand is none passing empty string 
+       
+       except Exception as exc:
+              logger.error(
+                     f"Embedding sync failed for product_ids = {product_id}, retrying.... Error : {exc}"
+
+              )
+              raise self.retry(exc = exc, countdown = 60)
+              # self.retry() tells celery: "this failed , wait 60 sec and try again"
+              # After max_retries=3 attempts, Celery marks the task as FAILED and stops
+              # We raise it (not just call it) because retry() raises a special Celery exception internally

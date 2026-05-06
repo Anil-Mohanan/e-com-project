@@ -108,7 +108,7 @@ class CheckoutAPIIntegrationTest(APITestCase):
                      quantity = 1,
                      price_at_purchase = None
               )
-       @patch('orders.services.task_send_payment_success_email.delay')
+       @patch('orders.events.handlers.task_send_order_confirmation_email.delay')
        def test_successful_checkout(self,mock_email):
               payload = {
                      'address_id': self.address.id
@@ -128,7 +128,7 @@ class CheckoutAPIIntegrationTest(APITestCase):
               # Your orders/views.py currently catches this beautifully with a try/except!
               self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
                            # FIX: Access the deeply nested message
-              self.assertEqual(response.data['details']['non_field_errors'][0], 'Invalid Address ID')
+              self.assertEqual(response.data['details']['non_field_errors'][0], 'Address not found')
               self.assertFalse(response.data['success'])
 
 class CancelOrderAPIIntegrationTest(APITestCase):
@@ -183,11 +183,13 @@ class AdminActionAPIIntegrationTest(APITestCase):
               response = self.client.patch(url)
 
               # 3. ASSERT: They must be blocked!
-              self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+              self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
               self.assertEqual(
-                     response.data['details']['non_field_errors'][0], 
-                     "Only Admin Can change the status"
+                      # DRF uses 'detail' inside the 'details' wrapper
+                      response.data['details']['detail'], 
+                      "You do not have permission to perform this action."
               )
+    
 
        def test_admin_user_can_mark_as_paid(self):
               # 1. SETUP: Login as the ADMIN

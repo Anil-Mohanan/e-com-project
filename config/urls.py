@@ -25,7 +25,7 @@ urlpatterns = [
 
     # 3. App URLs
 
- re_path(f'{api_prefix}', include('product.api.urls')),
+ re_path(f'{api_prefix}/', include('product.api.urls')),
  re_path(f'{api_prefix}/orders/', include('orders.api.urls')),
  re_path(f'{api_prefix}/payments/', include('payments.api.urls')),
  re_path(f'{api_prefix}/analytics/', include('analytics.api.urls')),
