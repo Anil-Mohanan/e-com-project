@@ -16,3 +16,5 @@ jobs:
         uses: actions/checkout@v4
       - name: Test Docker Build
         run: docker compose build
+      - name: Run Tests
+        run: docker compose run --rm web pytest
