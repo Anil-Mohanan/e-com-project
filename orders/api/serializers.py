@@ -1,5 +1,3 @@
-from django.template.defaultfilters import default
-from _pytest.pytester import rex_outcome
 from rest_framework import serializers
 from orders.models import Order , OrderItem, ShippingAddress
 from datetime import timedelta
