@@ -14,6 +14,17 @@ jobs:
     steps:
       - name: Download Project Code
         uses: actions/checkout@v4
+      - name: Create Dummy .env for CI
+        run: |
+          echo "DB_NAME=test_db" >> .env
+          echo "DB_USER=test_user" >> .env
+          echo "DB_PASSWORD=test_password" >> .env
+          echo "DB_HOST=db" >> .env
+          echo "DB_PORT=5432" >> .env
+          echo "SECRET_KEY=fake-secret-key-for-ci-testing-only" >> .env
+          echo "STRIPE_PUBLIC_KEY=pk_test_dummy" >> .env
+          echo "STRIPE_SECRET_KEY=sk_test_dummy" >> .env
+          echo "DEBUG=True" >> .env
       - name: Test Docker Build
         run: docker compose build
       - name: Run Tests
