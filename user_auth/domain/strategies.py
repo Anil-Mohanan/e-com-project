@@ -20,8 +20,7 @@ class EmailPasswordRegistrationStrategy(RegistrationStrategy):
        token = default_token_generator.make_token(user)
        
        # Use settings, NOT hardcoded strings
-       link = reverse('verify_email', kwargs={'uidb64': uid, 'token': token, 'version': version})
-       verification_url = f"{settings.BACKEND_URL}{link}"
+       verification_url = f"{settings.FRONTEND_URL}/verify-email/{uid}/{token}"
        # THE SENIOR MOVE: Save to Outbox. 
        # If Redis is down, the user still gets registered.
        from user_auth.models import AuthEventOutbox

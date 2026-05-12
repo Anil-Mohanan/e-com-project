@@ -1,3 +1,4 @@
+from unicodedata import decimal
 from rest_framework import serializers
 from product.models import Category, Product, ProductImages, ProductVariant, Review
 from django.core.exceptions import ValidationError
@@ -7,7 +8,7 @@ class  ReviewSerializer(serializers.ModelSerializer):
        
        class Meta:
               model = Review
-              fields = ['id','user','rating', 'comment', 'created_at']
+              fields = ['id','user','rating', 'comment', 'created_at','product']
 
        def validate_comment(self,value):
               if  "<" in value or ">" in value:
@@ -22,18 +23,33 @@ class ProdcutImageSerializer(serializers.ModelSerializer):
               fields = ['id', 'image','is_thumbnail']
 # 2. Serial
 class CategorySerializer(serializers.ModelSerializer):
+       # Including a list of products beloginig to this category
+       products = serializers.SerializerMethodField()
+
        class Meta:
               model = Category
-              fields = ['id','name','slug','image','required_specs_keys']
+              fields = ['id','name','slug','image','required_specs_keys','products']
+
+       def get_products(self, obj):
+              # only active products of this Category
+              products = obj.products.filter(is_active=True)[:10]
+              from .serializers import ProductSerializer 
+              return ProductSerializer(products, many  = True).data
+
 class ProductVariantSerializer(serializers.ModelSerializer):
        product_slug = serializers.ReadOnlyField(source = 'product.slug')
        class Meta:
               model = ProductVariant
-              fields = ['id','product','product_slug','attribute_name','attribute_value','color','price_adjustment','stock','is_active']
+              fields = ['id','product','product_slug','sku','variant_name','attribute_name','attribute_value','description','color','image','price','stock','is_active']
               
 class ProductSerializer(serializers.ModelSerializer):
        #Read Only : Nested Serialzers for displaying full details in JSON
-       category = CategorySerializer(read_only = True)
+       category = serializers.StringRelatedField(read_only = True)
+       category_id = serializers.PrimaryKeyRelatedField(
+              queryset = Category.objects.all(),
+              source = 'category',
+              write_only = True
+       )
        images = ProdcutImageSerializer(many = True, read_only = True)
        variants = ProductVariantSerializer(many=True, read_only = True)
        #Write Only: Fields to accept input when creating a product
@@ -96,4 +112,24 @@ class ProductSerializer(serializers.ModelSerializer):
               return attrs
 
               
+class ProductSearchSerializer(serializers.Serializer):
+       """A ultra lean serializer for the instant search dropdown"""
+
+       id = serializers.IntegerField()
+       name = serializers.CharField()
+       price = serializers.DecimalField(max_digits = 10, decimal_places = 2)
+       slug = serializers.CharField()
+       brand = serializers.CharField()
+       image = serializers.SerializerMethodField()
+
+       def get_image(self, obj):
+              # The obj is dict from reids
+              image_path = obj.get('image')
+              if not image_path:
+                     return None
               
+              #Using request from the context to build an absolute URL
+              request = self.context.get('request')
+              if request:
+                     return request.build_absolute_uri(f"/media/{image_path}")
+                     return f"/media/{image_path}"

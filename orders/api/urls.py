@@ -13,8 +13,6 @@ urlpatterns = [
     # Include the automated router URLs
     path('', include(router.urls)),
 
-
-    
     # Cart ViewSet actions mapped manually
     path('cart/', CartViewSet.as_view({'get': 'list'}), name='cart-view'),
     path('add_to_cart/', CartViewSet.as_view({'post': 'add_to_cart'}), name='cart-add'),
@@ -33,6 +31,6 @@ urlpatterns = [
 
     # Admin actions mapped manually
     path('admin/all/', AdminOrderViewSet.as_view({'get': 'list'}), name='admin-orders'),
-    path('<uuid:order_id>/mark_as_paid/', AdminOrderViewSet.as_view({'patch': 'mark_as_paid'}), name='order-mark-paid'),
-    path('<uuid:order_id>/update_status/', AdminOrderViewSet.as_view({'patch': 'update_status'}), name='order-update-status'),
+    path('admin/<uuid:order_id>/mark_as_paid/', AdminOrderViewSet.as_view({'patch': 'mark_as_paid'}), name='order-mark-paid'),
+    path('admin/<uuid:order_id>/update_status/', AdminOrderViewSet.as_view({'patch': 'update_status'}), name='order-update-status'),
 ]

@@ -9,26 +9,24 @@ logger = logging.getLogger(__name__)
 
 def rebuild_search_index(repo = default_repo):
 
-       products = repo.get_products_for_search_index() 
-       # Logic: 
-       processed_products = [
-              {
-                     "id": p['id'],
-                     "name": p['name'],
-                     "price": float(p['price']),
-                     "brand": p['brand'],  # Convert Decimal to float for JSON
-                     "slug" : p['slug']
-              } 
-              for p in products
-       ]
-
-       
-       json_data = json.dumps(processed_products)
-
-       cache.set('cqrs:product_catalog',json_data,timeout=None)
-
-       logger.info(f"CQRS index Rebuilt:{len(products)} products cached in Redis")
-
+       products_raw = repo.get_products_for_search_index() 
+    
+       # We use a dictionary to deduplicate products (one image per product)
+       indexed_data = {}
+       for p in products_raw:
+              pid = p['id']
+              if pid not in indexed_data:
+                  indexed_data[pid] = {
+                      "id": pid,
+                      "name": p['name'],
+                      "price": float(p['price']),
+                      "brand": p['brand'],
+                      "slug": p['slug'],
+                      "image": p['images__image'] # Grab the first image that find
+                  }
+       json_data = json.dumps(list(indexed_data.values()))
+       cache.set('cqrs:product_catalog', json_data, timeout=None)
+       logger.info(f"CQRS index Rebuilt: {len(indexed_data)} products cached in Redis")
 
 
 

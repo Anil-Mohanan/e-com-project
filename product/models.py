@@ -1,4 +1,3 @@
-from django.template.defaultfilters import default
 from django.db import models
 from django.utils.text import slugify
 from user_auth.models import User
@@ -12,11 +11,12 @@ from django.core.exceptions import ValidationError
 
 class Category(models.Model):
        name = models.CharField(max_length=100)
-       slug = models.SlugField(unique=True, blank=True)# 
+       slug = models.SlugField(unique=True, blank=True,max_length=255)# 
        image = models.ImageField(upload_to='category_images/',blank=True, null= True, validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
        required_specs_keys = models.JSONField(default = list, blank= True)
        class Meta:
               verbose_name_plural = "Categories"
+              ordering = ['name']
        def save(self, *args, **kwargs):
               #Auto-generate slug if empty(eg., "Smart Phone" -> "smart-phones")
               if not self.slug:
@@ -31,7 +31,7 @@ class Product(models.Model):
        category = models.ForeignKey(Category,related_name='products',on_delete=models.CASCADE)
        name = models.CharField(max_length=200,db_index=True)
        brand = models.CharField(max_length=100, blank=True, null=True,db_index=True)
-       slug = models.SlugField(unique=True,blank=True)
+       slug = models.SlugField(unique=True,blank=True,max_length=255)
        description = models.TextField()
        price = models.DecimalField(max_digits=10, decimal_places=2)
        stock = models.PositiveIntegerField()
@@ -82,18 +82,39 @@ class ProductImages(models.Model):
               return f"Image for {self.product.name}"
 class ProductVariant(models.Model):
        product = models.ForeignKey(Product,related_name='variants', on_delete=models.CASCADE)
-       attribute_name = models.CharField(max_length=100)
-       attribute_value = models.CharField(max_length=255)
-       color = models.CharField(max_length=50, blank=True, null=True)
 
-       price_adjustment = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)#to set different price for different variant
+       sku = models.CharField(max_length = 100, unique = True, null = True, blank = True)
+
+       attribute_name = models.CharField(max_length=100)
+
+       attribute_value = models.CharField(max_length=255)
+
+       variant_name = models.CharField(
+              max_length = 255,
+              blank = True, 
+              null = True, 
+              help_text = "Optional: Use this to completely override the name (e.g 'i9-149000ks Ultra')"
+       )
+
+       description = models.TextField(
+              blank = True,
+              null = True,
+              help_text = "Optional:Technical specs or details sepcific to This Varaint"
+       )
+
+       color = models.CharField(max_length=100, blank=True, null=True)
+
+       image = models.ImageField(upload_to = 'variants/',null = True, blank = True)
+
+       price = models.DecimalField(max_digits=10, decimal_places = 2, help_text = "Total price for THIS variant")
        
        stock = models.PositiveIntegerField(default=0) # Each variant have different stock
        
        is_active = models.BooleanField(default=True)
 
+
        def __str__(self):
-              return f"{self.product.name} - {self.attribute_name}: {self.attribute_value} ({self.color})"
+              return f"{self.product.name} - {self.attribute_value} ({self.sku})"
 
 class InventoryUnit(models.Model):
 

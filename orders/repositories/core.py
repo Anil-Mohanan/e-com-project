@@ -1,4 +1,3 @@
-from billiard.sharedctypes import Value
 from orders.domain import IndianGSTStrategy
 from orders.domain import StandardShippingStrategy
 from decimal import Decimal
@@ -162,7 +161,43 @@ def checkout_order(order_id, address_id, user):
               order.status = "Pending"
               order.save()
 
+def split_and_checkout(cart_order_id, product_ids, address_id,user):
+       """
+       Creates a new order from selected cart items, 
+       leaving unselected items in the original cart.
+
+       """
+       with transaction.atomic():
+              #get the orginal cart
+              cart = Order.objects.get(order_id  = cart_order_id)
+
+              # Validate address
+              try:
+                     address = ShippingAddress.objects.get(user = user, id = address_id)
+              except ShippingAddress.DoesNotExist:
+                     raise ValueError("Address Not Found")
+
+              # Get selected items
+              selected_items = OrderItem.objects.filter(order = cart, product_id__in = product_ids)
+
+              if not selected_items.exists():
+                     raise ValueError("None of the selected products are in you cart")
+
+              # Create a brand new order for checkout
+              new_order = Order.objects.create(user = user, shipping_address = address , status = "Pending")
+
+              for item in selected_items:
+                     item.order = new_order
+                     item.save()
+
+              # Recalculate total for both orders
+              update_order_total(new_order.order_id)
+              update_order_total(cart_order_id)
+
+              return _to_entity(new_order)
+
 def update_order_total(order_id):
+
 
        with transaction.atomic():
 
@@ -287,12 +322,12 @@ def get_dashboard_order_metrics():
 
 def get_daily_sales_chart_data():
        valid_orders = Order.objects.valid_sales()
-       sale_data = list(valid_orders.annotate(date = TruncDate('created_at')).values('date').annotate(total = Sum('total_price')).order_by('date'))
+       sale_data = list(valid_orders.annotate(date = TruncDate('created_at')).values('date').annotate(revenue = Sum('total_price')).order_by('date'))
        return sale_data
 
 def get_monthly_sales_chart_data():
        valid_orders = Order.objects.valid_sales()
-       sale_data = list(valid_orders.annotate(date = TruncMonth('created_at')).values('date').annotate(total = Sum('total_price')).order_by('date'))
+       sale_data = list(valid_orders.annotate(date = TruncMonth('created_at')).values('date').annotate(revenue = Sum('total_price')).order_by('date'))
        return sale_data
 
 def get_top_selling_products():

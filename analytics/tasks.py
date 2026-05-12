@@ -32,11 +32,12 @@ def precompute_dashboard_statistics():
               
 @shared_task
 def log_api_request_task(user_id, path, method, status_code, ip_address):
-
-       AuditLog.objects.create(
-               Path= path,
-               method= method,
-               status_code= status_code,
-               ip_address= ip_address,
-               user_id= user_id,
-       )
+       if method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+                     # don't aduit GET methods
+              return AuditLog.objects.create(
+                     Path= path,
+                     method= method,
+                     status_code= status_code,
+                     ip_address= ip_address,
+                     user_id= user_id,
+              )

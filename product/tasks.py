@@ -86,8 +86,8 @@ def task_compute_recommendations():
 
                      normalized = [
                             {
-                                   'product_id': rec['product_id'],# The co-viewed product
-                                   'score':float(rec['co_view_count'])# <- renaming the field 
+                                   'product_id': rec.id,# The co-viewed product
+                                   'score':1.0# <- renaming the field 
                             }
                             for rec in raw_recs
                      ]

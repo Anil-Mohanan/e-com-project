@@ -9,9 +9,6 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-from django.conf.global_settings import CSRF_COOKIE_SAMESITE
-from django.conf.global_settings import CSRF_COOKIE_HTTPONLY
-from django.conf.global_settings import SESSION_COOKIE_HTTPONLY
 import os
 from pathlib import Path
 from dotenv import load_dotenv 
@@ -61,11 +58,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
 
     #Apps (The Domain)
-    'user_auth',
-    'product',
-    'orders',
-    'payments',
-    'analytics'
+    'user_auth.apps.UserAuthConfig',
+    'product.apps.ProductConfig',
+    'orders.apps.OrdersConfig',
+    'payments.apps.PaymentsConfig',
+    'analytics.apps.AnalyticsConfig',
 ]
 
 MIDDLEWARE = [
@@ -234,9 +231,8 @@ SIMPLE_JWT = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-# PAYMENTS CONFIGURATION
+
 
 env = environ.Env() 
 
@@ -383,7 +379,7 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': 10.0,
     },
     'compute-recommendation-nightly': {
-        'task': 'product.compute_recommendations',
+        'task': 'product.tasks.compute_recommendations',
         'schedule':crontab(hour=2,minute = 0),
     },
 }

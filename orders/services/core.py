@@ -21,7 +21,7 @@ logger = logging.getLogger('orders')
 
 
 
-def process_checkout(user,address_id,repo=default_repo):
+def process_checkout(user,address_id,product_ids=None,repo=default_repo):
 
        lock_key = f"checkout_lock_{user.id}"
        if not cache.add(lock_key,"locked",timeout=15):
@@ -29,9 +29,9 @@ def process_checkout(user,address_id,repo=default_repo):
        
        try:   
               with transaction.atomic():
-                     existing =  repo.get_pending_order_for_user(user.id)
-                     if existing:
-                            return existing
+                     # existing =  repo.get_pending_order_for_user(user.id)
+                     # if existing and not product_ids:
+                     #        return existing
 
                      #Get the cart
                      cart_entity = repo.get_cart(user)
@@ -45,9 +45,13 @@ def process_checkout(user,address_id,repo=default_repo):
 
                             repo.set_item_price(cart_entity.order_id, item.product_id,live_price)
 
+                     # SELECTIVE CHECKOUT: If product_ids provided, split the cart
 
-                     repo.checkout_order(cart_entity.order_id, address_id, user)
-                     order_entity = repo.get_order_by_id(cart_entity.order_id)
+                     if product_ids:
+                            order_entity = repo.split_and_checkout(cart_entity.order_id, product_ids, address_id, user)
+                     else:
+                            repo.checkout_order(cart_entity.order_id, address_id, user)
+                            order_entity = repo.get_order_by_id(cart_entity.order_id)
                      repo.record_order_event(
                             order_id = cart_entity.order_id,# the UUID from the entity
                             event_type = 'order.placed',# the immutable fact name
@@ -65,17 +69,17 @@ def process_checkout(user,address_id,repo=default_repo):
                      # Instead of synchronously calling the product.services to decut inventory (which can carsh),
                      # Saving an event tot the outbox . The Background worker will pic k this up.
 
-                     items_data = repo.get_order_items_data(cart_entity.order_id)
+                     items_data = repo.get_order_items_data(order_entity.order_id)
 
                      payload = {
-                            'order_id' : cart_entity.order_id,
+                            'order_id' : order_entity.order_id,
                             'items' : items_data,
                             'user_id' : user.id
                      }
 
                      order_event_bus.publish(OrderPlaced(payload=payload))
 
-                     return repo.get_order_by_id(cart_entity.order_id)              
+                     return order_entity              
        except Exception as e:
               logger.error(f"Checkout failed for user {user.id}: {e}")
 

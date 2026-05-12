@@ -1,9 +1,9 @@
-from django.core.mail import message
-from django.shortcuts import render
+from math import exp
+from django.db import IntegrityError
 from rest_framework import viewsets, permissions, parsers,filters,status
 from rest_framework.response import Response
-from product.models import Product , Category, ProductVariant, Review , ProductPurchaseHistory
-from .serializers import ProductSerializer, CategorySerializer, ProductVariantSerializer, ReviewSerializer
+from product.models import Product , Category, ProductVariant, Review 
+from .serializers import ProductSerializer, CategorySerializer, ProductVariantSerializer, ReviewSerializer, ProductSearchSerializer
 from .permissions import IsSellerOrAdmin, IsReviewAuthorOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
@@ -18,6 +18,7 @@ from product.services import (
     fast_search_catalog,
     get_trending_products_service,
     get_related_products_service,
+    update_reveiw_process,
 )
 import logging
 
@@ -29,10 +30,14 @@ class ProductFilter(django_filters.FilterSet):
        max_price = django_filters.NumberFilter(field_name="price", lookup_expr='lte') # lte = Lesser than or Equal
 
        brand = django_filters.CharFilter(lookup_expr='icontains')
+       
+       #Tell Django to fitler the 'category' query paramter
+       category = django_filters.CharFilter(field_name='category__slug', lookup_expr='exact')
+
 
        class Meta:
               model = Product
-              fields = ['category', 'brand', 'is_active']
+              fields = [ 'brand', 'is_active']
 
 class ProductViewSet(viewsets.ModelViewSet):
        """A unified Viewset for viewing and editing products.
@@ -154,8 +159,9 @@ class ProductViewSet(viewsets.ModelViewSet):
               session_key = request.session.session_key,
 
               )
-
-              return success_response(message='Search complete', status_code=200,data=results)
+              #seralize the redis result to add absolute URL
+              serializer = ProductSearchSerializer(results, many = True, context = {'request': request})
+              return success_response(message='Search complete', status_code=200,data=serializer.data)
 
        @action(detail=False, methods=['get'],permission_classes=[permissions.AllowAny])
        def trending(self,request, *args, **kwargs):
@@ -168,27 +174,27 @@ class ProductViewSet(viewsets.ModelViewSet):
               days = int(request.query_params.get('days',7))
               limit = int(request.query_params.get('limit',10))
 
-              data = get_trending_products_service(days = days,limit=limit)
+              products = get_trending_products_service(days = days, limit = limit)
 
-              return success_response(message = "Trending products", status_code=200, data = data)
+              serializer = self.get_serializer(products, many = True)
+
+              return success_response(message = "Trending products", status_code=200, data = serializer.data)
        
        @action(detail = True, methods=['get'],permission_classes=[permissions.AllowAny])
        def related(self, request, *args, **kwargs):
-           """
-           GET /api/products/{slug}/related/
-           Returns products frequently viewed in the same session as this product.
-           This is the "Customers also viewed..." recommendation.
-           detail=True because we operate on one specific product.
-           """
-           product = self.get_object()
-           days = int(request.query_params.get('days', 30))
-           limit = int(request.query_params.get('limit', 5))
-           data = get_related_products_service(
-               product_id=product.id,
-               days=days,
-               limit=limit,
-           )
-           return success_response(message="Related products", status_code=200, data=data)
+              
+              """
+              GET /api/products/{slug}/related/
+              Returns products frequently viewed in the same session as this product.
+              This is the "Customers also viewed..." recommendation.
+              detail=True because we operate on one specific product.
+              """
+              product = self.get_object()
+              days = int(request.query_params.get('days', 30))
+              limit = int(request.query_params.get('limit', 5))
+              products = get_related_products_service(product_id = product.id, days=days, limit = limit)
+              serializer = self.get_serializer(products, many = True)
+              return success_response(message="Related products", status_code=200, data=serializer.data)
 
        def perform_update(self, serializer):
               """
@@ -232,7 +238,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
        """Viewset for Categories.
        Same Logic: Public can view, only Admin can edit"""
 
-       queryset = Category.objects.all().order_by('id')
+       queryset = Category.objects.all().prefetch_related('products', 'products__images')
        serializer_class = CategorySerializer
        lookup_field = 'slug'
 
@@ -250,8 +256,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
        @cache_response(key_prefix="category_detail",error_message="Category not Found",allowed_params= [])
        def retrieve(self, request, *args, **kwargs):
               instance = self.get_object() # This is the "Search" step. It uses the slug and the queryset you defined at the top of the class to find the exact row in your database. 
-              serializer = self.get_serializer(instance) # what is this line is for 
-              data = serializer.data # what is this for 
+              serializer = self.get_serializer(instance)  
+              data = serializer.data
               return Response(data)
 
 class ProductVariantViewSet(viewsets.ReadOnlyModelViewSet):
@@ -259,7 +265,7 @@ class ProductVariantViewSet(viewsets.ReadOnlyModelViewSet):
 
        queryset = ProductVariant.objects.all().order_by('id')
        serializer_class = ProductVariantSerializer
-       lookup_field = 'slug'
+       # lookup_field = 'slug'
 
        def get_queryset(self):
               """Allow filtering variants by  product.
@@ -304,8 +310,21 @@ class ReviewViewSet(viewsets.ModelViewSet):
                      return queryset
               return Review.objects.none()
        
-       http_method_names = ['get', 'put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive 
-       @cache_response(key_prefix="review_list",error_message="Unable to show the Review",allowed_params=['product','page','rating','ordering'])
+       http_method_names = ['get','post','put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive
+
+       def create(self, request, *args, **kwargs):
+              product_id = request.data.get('product')
+              user_id = request.user.id
+              rating = request.data.get('rating')
+              comment = request.data.get('comment')
+
+              try:
+                     add_review_process(product_id, user_id, rating, comment)
+                     return Response({"detail": "Review submitted successful"}, status = status.HTTP_201_CREATED)
+              except ValueError as e:
+                     return Response({"detail": str(e)}, status = status.HTTP_400_BAD_REQUEST)
+
+       @cache_response(key_prefix="review_list",error_message="Unable to show the Review",allowed_params=['product_id','page','rating','ordering'])
        def list(self,request,*args, **kwargs):
                 
               response = super().list(request,*args, **kwargs)
@@ -320,3 +339,14 @@ class ReviewViewSet(viewsets.ModelViewSet):
               data = serializer.data
               
               return Response(data)
+
+       def update(self, request, *args, **kwargs):
+              review_id = kwargs.get('pk')
+              user_id = request.user.id
+              rating = request.data.get('rating')
+              comment = request.data.get('comment')
+              try:
+                     update_reveiw_process(review_id, user_id, rating, comment)
+                     return Response({"detail": "Review updated successfully"}, status=status.HTTP_200_OK)
+              except (ValueError, PermissionError) as e:
+                     return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

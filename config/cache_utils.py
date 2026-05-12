@@ -2,6 +2,7 @@ from django.core.cache import cache
 from rest_framework.response import Response
 from functools import wraps
 from config.utils import error_response
+import time
 import hashlib
 import logging
 
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 def cache_response(key_prefix,timeout = 900, error_message = "Service temporarily Unavailable", user_specific=False, allowed_params = None):
        """A custom decorateor that automaticaly handles caching, reading, writing , and error loggingfor django REST_FRAMEWORK views"""
 
-       def decorateor(view_func): # view_func is literally the list()or retrieve() method that you wrote in product/views.py. Python grabs your entire function and hands it into here.
+       def decorator(view_func): # view_func is literally the list()or retrieve() method that you wrote in product/views.py. Python grabs your entire function and hands it into here.
               @wraps(view_func)
               def _wrapped_view_func(self,request,*args,**kwargs):
                      query_dict = {}
@@ -59,4 +60,17 @@ def cache_response(key_prefix,timeout = 900, error_message = "Service temporaril
 
                      return response
               return _wrapped_view_func
-       return decorateor
+       return decorator
+
+def invalidate_cache(key_prefix):
+
+       """Sets the version to current timestamp.
+       unique cache key every time .
+       """
+
+       version_key = f"{key_prefix}_version"
+
+       #Use millisecond time stamp as version - alwasy unique alwasy works
+       new_version = int(time.time() * 1000)
+       cache.set(version_key, new_version,timeout = None)
+       logger.info(f"Cache invalidated: {version_key} -> v{new_version}")

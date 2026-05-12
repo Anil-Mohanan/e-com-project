@@ -112,7 +112,7 @@ class CartAbandonmentReportView(APIView):
        permission_classes = [IsAdminUser]
 
        def get(self,request,*args, **kwargs):
-              days = int(request.query_params.get('days',30))
+              days = min(int(request.query_params.get('days',30)),365)
 
               data = get_cart_abandonment_report(days = days)
               return Response(data)

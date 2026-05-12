@@ -31,18 +31,29 @@ class RegisterView(generics.CreateAPIView):# using generics for safety reasons ,
               
               
 class LogoutView(APIView):
-       permission_classes = [IsAuthenticated]
+       permission_classes = [AllowAny]
        def post(self, request, *args, **kwargs):
               try :
-                     refresh_token = request.data["refresh"]
+                     refresh_token = request.COOKIES.get('refresh_token') or request.data.get("refresh")
 
                      token = RefreshToken(refresh_token)
 
                      token.blacklist()
                      
-                     return success_response(message = "Successfully logged Out", status_code = 205)
+                     response =  success_response(message = "Successfully logged Out", status_code = 205)
+
+                     response.delete_cookie('access_token',path='/',samesite="Lax")
+                     response.delete_cookie('refresh_token',path='/',samesite="Lax")
+
+                     return response
+                     
               except Exception as e:
-                     return error_response(message="Unable to Log Out. Please Try again",status_code=400,log_message=f"Token Error in LogOutView : {e}")
+                     response = error_response(message="Unable to Log Out. Please Try again",status_code=400,log_message=f"Token Error in LogOutView : {e}")
+
+                     response.delete_cookie('access_token',path='/',samesite="Lax")
+                     response.delete_cookie('refresh_token',path = '/', samesite="Lax")
+
+                     return response
               
 class UserProfileView(generics.RetrieveUpdateAPIView):
        queryset = User.objects.all()

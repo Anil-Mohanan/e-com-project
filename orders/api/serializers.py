@@ -1,3 +1,4 @@
+from django.template.defaultfilters import default
 from _pytest.pytester import rex_outcome
 from rest_framework import serializers
 from orders.models import Order , OrderItem, ShippingAddress
@@ -51,7 +52,12 @@ class CartSerializer(serializers.ModelSerializer):
 class CheckoutInputSerializer(serializers.Serializer):
 
        address_id = serializers.IntegerField(required = True)
-       
+       #Optional: if provided, only these products get checked out
+       product_ids = serializers.ListField(
+              child = serializers.IntegerField(),
+              required = False, 
+              default = None,
+       )
        def validate_address_id(self,value):
 
               return value

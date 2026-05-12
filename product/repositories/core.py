@@ -41,7 +41,7 @@ def get_low_stock_products():
 
 def get_products_for_search_index():
     # .values() returns fast dictionaries for Redis caching instead of heavy Django Models
-    return list(Product.objects.filter(is_active=True).values('id', 'name', 'slug', 'price', 'brand'))
+    return list(Product.objects.filter(is_active=True).values('id', 'name', 'slug', 'price', 'brand','images__image'))
 
 # ==========================================
 # Product Core Repository Methods
@@ -194,6 +194,19 @@ def record_product_purchase(user_id,product_id):
 # Views.py
 # ==========================================
 
+def get_review_by_id(review_id):
+    return Review.objects.get(id = review_id)
+
+def update_review(review_id, rating, comment):
+    review = Review.objects.get(id=review_id)
+    if rating:
+        review.rating = rating
+    if comment:
+        review.comment = comment
+    review.save()
+    return review
+
+
 def user_already_reviewed(product_id, user_id):
 
        return Review.objects.filter(product_id = product_id,user_id = user_id).exists()
@@ -201,6 +214,7 @@ def user_already_reviewed(product_id, user_id):
 def user_has_purchased(product_id,user_id):
 
        return ProductPurchaseHistory.objects.filter(product_id = product_id,user_id = user_id).exists()
+
 
 
 
@@ -230,8 +244,12 @@ def get_trending_products(days = 7 , limit = 10):
     """
     since = timezone.now() - timedelta(days = days)
 
+    trending_ids = (
+        ProductBehaviorLog.objects.filter(event_type = 'product.viewed',created_at__gte = since, product_id__isnull = False).values('product_id').annotate(view_count = Count('id')).order_by('-view_count')[:limit].values_list('product_id',flat = True)
+    )
+
     return list(
-        ProductBehaviorLog.objects.filter(event_type = 'product.viewed',created_at__get = since, product_id__isnull = False).values('product_id').annotate(view_count = Count('id')).order_by('-view_count')[:limit]
+        Product.objects.filter(id__in = trending_ids, is_active = True).prefetch_related('images')
     )
 
 def get_cart_abandonment_data(days= 30, min_views=3):
@@ -246,11 +264,11 @@ def get_cart_abandonment_data(days= 30, min_views=3):
     since = timezone.now() - timedelta(days = days)
 
     views = (
-        ProductBehaviorLog.objects.filter(event_type = 'prodcut.viewed',created_at__gte =since, product_id__isnull = False).values('product_id').annotate(view_count=Count('id'))
+        ProductBehaviorLog.objects.filter(event_type = 'product.viewed',created_at__gte =since, product_id__isnull = False).values('product_id').annotate(view_count=Count('id'))
     )
     cart_adds = (
         ProductBehaviorLog.objects.filter(
-            event_type = 'product.added_to_cart',created_at__get = since, product_id__isnull = False
+            event_type = 'product.added_to_cart',created_at__gte = since, product_id__isnull = False
         ).values('product_id').annotate(cart_count = Count('id'))
     )
 
@@ -329,8 +347,8 @@ def get_frequently_viewed_together(product_id, days=30, limit=5):
     if not sessions_that_viewed:
         return []
     # Step 2: find other products those same sessions viewed
-    return list(
-        ProductBehaviorLog.objects
+    related_ids = (
+                ProductBehaviorLog.objects
         .filter(
             event_type='product.viewed',
             session_key__in=sessions_that_viewed,
@@ -340,6 +358,10 @@ def get_frequently_viewed_together(product_id, days=30, limit=5):
         .values('product_id')
         .annotate(co_view_count=Count('id'))
         .order_by('-co_view_count')[:limit]
+        .values_list('product_id',flat=True)
+    )
+    return list(
+        Product.objects.filter(id__in = related_ids, is_active = True).prefetch_related('images')
     )
 
 
@@ -376,12 +398,14 @@ def get_precomputed_recommendations(product_id,limit = 5):
 
     """
 
-    from product.models import ProductRecommendation
+    from product.models import ProductRecommendation, Product
+    # Get the IDs of the recommended products from the pre-computed table
+    related_ids = ProductRecommendation.objects.filter(
+        source_product_id = product_id
+    ).values_list('recommended_product_id',flat=True)[:limit]
+    # Fetch actual Product objects for those IDs
+    # This enusre the seralizer get the 'name', 'price', and 'image'  it needs!
 
     return list(
-        ProductRecommendation.objects.filter(
-            source_product_id = product_id,
-        ).values('recommended_product_id','score') # only need the ID and Score , not the full product Object
-        [:limit] # Slicing the python translates to LIMTI in SQL - no full table scan
-
+            Product.objects.filter(id__in = related_ids, is_active = True).prefetch_related('images')
     )

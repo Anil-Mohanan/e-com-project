@@ -4,7 +4,7 @@ from rest_framework.decorators import action
 from orders.models import Order, OrderItem,ShippingAddress
 from .serializers import OrderSerializer, OrderItemSerializer , ShippingAddressSerializer, CartSerializer,CheckoutInputSerializer
 from django.core.cache import cache
-from config.cache_utils import cache_response
+from config.cache_utils import cache_response, invalidate_cache
 from config.utils import error_response,success_response
 from orders.services import process_checkout, add_to_cart_process,update_quantity_process,remove_item_process,update_status_process,cancel_order_process,mark_as_paid_process,sync_order_prices,get_user_cart
 from rest_framework.throttling  import UserRateThrottle
@@ -16,7 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 class CheckoutThrottle(UserRateThrottle):
-       rate = '20/minute'
+       rate = '200/minute'
 
 class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
        permission_classes = [permissions.IsAuthenticated]
@@ -39,18 +39,17 @@ class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
                             product_id=product_id,
                             quantity=quantity,
                      )
+                     
               except ObjectDoesNotExist:
                      return error_response(message = "Product not found",status_code=404)
 
               order_model = Order.objects.get(order_id=order.order_id)
               serializer = self.get_serializer(order_model)
-
-              cache.delete(f"user_cart_{request.user.id}")
-
+              invalidate_cache("user_cart")
               return Response(serializer.data)
 
        
-       @cache_response(key_prefix="user_cart", timeout=60, user_specific=True, error_message="Unable to load your cart",allowed_params=[])
+       @cache_response(key_prefix="user_cart",timeout=60, user_specific=True,error_message="Unable to Load your cart", allowed_params=[])
        def list(self, request, *args, **kwargs):
               """Fetch the current user's active cart.
               if it doesn't exist, create a new one."""
@@ -75,12 +74,13 @@ class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
                             product_id = product_id,
                             quantity = quantity
                      )
+                     
               except OrderItem.DoesNotExist:
                      return error_response(message = "Item not in Cart",status_code = 404)
 
               order_model = Order.objects.get(order_id=order.order_id)
               serializer = self.get_serializer(order_model)
-              cache.delete(f"user_cart_{request.user.id}")
+              invalidate_cache("user_cart")
               return Response(serializer.data)
 
                      # Remove Item (Delete Completely )
@@ -94,12 +94,13 @@ class CartViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
                             user = request.user,
                             product_id = product_id,
                      )
+                     
               except (Order.DoesNotExist, OrderItem.DoesNotExist):
                      return error_response(message = 'Item  Not Found', status_code = 404)
               
               order_model = Order.objects.get(order_id=order.order_id)
               serializer = self.get_serializer(order_model)
-              cache.delete(f"user_cart_{request.user.id}")
+              invalidate_cache("user_cart")
               return Response(serializer.data)
 
 
@@ -115,10 +116,13 @@ class CheckoutViewSet(viewsets.GenericViewSet):
               serializer.is_valid(raise_exception=True)
 
               address_id = serializer.validated_data['address_id']
+              product_ids = serializer.validated_data['product_ids']
 
               try:
-                     order = process_checkout(user = request.user, address_id= address_id)
+                     order = process_checkout(user = request.user, address_id= address_id,product_ids =product_ids)
                      order_model = Order.objects.get(order_id=order.order_id)
+                     invalidate_cache("user_orders")
+                     invalidate_cache("user_cart")
                      return Response(self.get_serializer(order_model).data)
                      
               except Order.DoesNotExist:
@@ -165,6 +169,8 @@ class OrderHistoryViewset(viewsets.ReadOnlyModelViewSet):
                      order = cancel_order_process(
                      order_id = order.order_id
                      )
+                     invalidate_cache("user_orders")
+                     invalidate_cache('Order_detail')
                      return success_response(message="Order cancelled Successfully",data={'new_status': 'cancelled'},status_code=200)
               except Exception as e:
                      return error_response(message =  str(e), status_code = 500)
@@ -196,8 +202,8 @@ class AdminOrderViewSet(viewsets.ModelViewSet):
                      new_status = new_status,
                      actor = request.user,
               )
-              cache.delete(f"Order_detail_user_{order.user.id}_{order.order_id}")
-              cache.delete(f"user_orders_user_{order.user.id}")
+              invalidate_cache("user_orders")
+              invalidate_cache("Order_detail")
               return success_response(message = "Order updated Successfully",data ={'current_status':order.status})
        
        @action(detail=True, methods=['patch'])
@@ -214,6 +220,8 @@ class AdminOrderViewSet(viewsets.ModelViewSet):
                      return success_response(message="Order is already Paid")
 
               mark_as_paid_process(order_id=order.order_id)
+              invalidate_cache("user_orders")
+              invalidate_cache("Order_detail")
               
               return success_response(message = "Payment confirmed",data ={'isPaid': True})
 

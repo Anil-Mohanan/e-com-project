@@ -1,4 +1,3 @@
-from unicodedata import name
 from django.urls import path,include
 from .views import RegisterView,LogoutView,UserProfileView,DeleteAccountView,VerifyEmailView,CustomTokenObtainPairView,ActiveSessionView,RevokedDevicesView,CustomTokenRefreshView
 from rest_framework_simplejwt.views import (

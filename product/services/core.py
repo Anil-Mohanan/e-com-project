@@ -34,6 +34,18 @@ def add_review_process(product_id, user_id, rating, comment, repo=default_repo):
     logger.info(f"User {user_id} added a {rating}-star review to product {product_id}")
     return True
 
+def update_reveiw_process(review_id, user_id, rating, comment, repo = default_repo):
+       """Updateing the review ensures only the author can update and validates data."""
+       review = repo.get_review_by_id(review_id)
+
+       if review.user_id != user_id:
+              raise PermissionError("You are not the author of this review")
+       if rating and (rating < 1 or rating > 5):
+              raise ValueError("Rating must be between 1 and 5.")
+       
+       return repo.update_review(review_id, rating, comment)
+
+
 
 def build_comparison_matrix(product_ids_string,repo = default_repo):
        try:

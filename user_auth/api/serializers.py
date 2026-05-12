@@ -12,9 +12,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
        # write_only menas the password is never going to send back to them 
        password = serializers.CharField(write_only=True)# very important
        full_name = serializers.CharField(write_only= True, required = False)
+       is_seller = serializers.BooleanField(write_only = True, required = False, default = False)
        class Meta:
               model = User
-              fields = ['email','password','full_name']
+              fields = ['email','password','full_name','is_seller']
               
        def validate_password(self,value):
               validate_password(value)

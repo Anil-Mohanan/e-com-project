@@ -77,6 +77,7 @@ class StripeWebhookView(APIView):
                      return HttpResponse(status=400)
               
               # 5 Handle The Event
-              process_stripe_webhook_task.delay(event)
+              import json
+              process_stripe_webhook_task.delay(json.loads(payload))
               return HttpResponse(status= 200)
               

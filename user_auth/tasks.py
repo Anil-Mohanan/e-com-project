@@ -37,8 +37,13 @@ def sweep_auth_outbox():
                 email = event.payload.get('email'),
                 url = event.payload.get('url')
                 )
-    
-    
+
+            if event.event_type == 'auth.password_reset':
+                subject = "Reset Your Password"
+                message = f"Click here to reset your password: {event.payload.get('url')}"
+                send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [event.payload.get('email')])
+                
+
             event.processed = True
             event.processed_at = timezone.now()
             event.save()
