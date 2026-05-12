@@ -24,6 +24,7 @@ jobs:
           echo "SECRET_KEY=fake-secret-key-for-ci-testing-only" >> .env
           echo "STRIPE_PUBLIC_KEY=pk_test_dummy" >> .env
           echo "STRIPE_SECRET_KEY=sk_test_dummy" >> .env
+          echo "STRIPE_WEBHOOK_SECRET=whsec_dummy_for_testing" >> .env
           echo "DEBUG=True" >> .env
       - name: Test Docker Build
         run: docker compose build
