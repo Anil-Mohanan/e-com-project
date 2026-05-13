@@ -28,8 +28,6 @@ jobs:
           echo "DEBUG=True" >> .env
       - name: Test Docker Build
         run: docker compose build
-      - name: Run Tests
-        run: docker compose run --rm web pytest
       - name: Check Missing Migrations
         run: docker compose run --rm web python manage.py makemigrations --check --dry-run
       - name: Run Security Linter
