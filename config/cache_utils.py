@@ -26,7 +26,7 @@ def cache_response(key_prefix,timeout = 900, error_message = "Service temporaril
 
                      sorted_items = sorted(query_dict.items())
                      param_string = "&".join([f"{k}={v}" for k, v in sorted_items])
-                     hashed_params = hashlib.md5(param_string.encode()).hexdigest() if param_string else ""
+                     hashed_params = hashlib.md5(param_string.encode(),usedforsecurity=False).hexdigest() if param_string else ""
 
                      cache_key = key_prefix
                      version = cache.get(f"{key_prefix}_version")
