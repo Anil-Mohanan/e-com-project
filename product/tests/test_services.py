@@ -18,7 +18,7 @@ class TestProductService:
 
        def test_get_product_price_with_variant(self):
               p = ProductFactory(price = 1000)
-              v = ProductVariantFactory(product = p, price_adjustment = 200)
+              v = ProductVariantFactory(product = p, price = 1200)
               assert float(get_product_price(p.id, v.id) == 1200)
 
        def test_compare_limit_validation(self):
@@ -65,7 +65,7 @@ class TestInventoryService:
        def test_deduct_inventory_for_order_successful(self):
               """HAPPY PATH: Full inventory deduction flow with buld updates"""
               p = ProductFactory(name = "GTX 4080", stock = 3)
-              units = InventoryUnitFactory.create_batch(3,product = p, status = 'In Stock') 
+               
               #We use create_batch(3) to rapidly generate related data.
 
               # Data format required by your service: 
@@ -91,6 +91,10 @@ class TestInventoryService:
 
               #1 SETUP: High aggregate stock, low granular stock
               p = ProductFactory(name = "Broken Inventory Product", stock = 10)
+
+              from product.models import InventoryUnit
+              InventoryUnit.objects.filter(product=p).delete()
+
               InventoryUnitFactory(product = p, status = "In Stock")
 
               items_data = [{"product_id": p.id, "quantity": 2}]

@@ -109,6 +109,13 @@ class ProcessCheckoutTests(TestCase):
 
        def test_checkout_returns_existing_pending_order(self,mock_email,mock_get_details, mock_get_price):
 
+              mock_get_details.return_value = {
+                     'name': 'Test Item', 
+                     'price': '100.00'
+              }
+
+              mock_get_price.return_value = '100.00'
+
               # 1. SETUP: The user ALREADY has a Pending order in the DB
               existing_order = OrderFactory(user = self.user, status = 'Pending')
               # 2. ACT: They try to checkout again

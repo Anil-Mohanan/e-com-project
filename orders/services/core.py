@@ -29,9 +29,9 @@ def process_checkout(user,address_id,product_ids=None,repo=default_repo):
        
        try:   
               with transaction.atomic():
-                     # existing =  repo.get_pending_order_for_user(user.id)
-                     # if existing and not product_ids:
-                     #        return existing
+                     existing =  repo.get_pending_order_for_user(user.id)
+                     if existing and not product_ids:
+                            return existing
 
                      #Get the cart
                      cart_entity = repo.get_cart(user)

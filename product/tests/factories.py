@@ -32,7 +32,7 @@ class ProductVariantFactory(factory.django.DjangoModelFactory):
        attribute_name = factory.Sequence(lambda n: f'attribute_{n}')
        attribute_value = factory.Sequence(lambda n: f'value_{n}')
        color = factory.Faker('color_name')
-       price_adjustment = factory.Faker('pydecimal',left_digits = 4,right_digits = 2, positive = True)
+       price = factory.Faker('pydecimal',left_digits = 4,right_digits = 2, positive = True)
        stock = factory.Faker('random_int',min=1,max=100)
        is_active = True
 

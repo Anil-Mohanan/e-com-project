@@ -59,14 +59,12 @@ def get_product_details(product_id):
     }
 
 def get_product_price(product_id, variant_id):
-    product = Product.objects.get(id=product_id)
-    final_price = product.price
-
     if variant_id:
-       product_variant = ProductVariant.objects.get(id=variant_id)
-       final_price += product_variant.price_adjustment
+        product_variant = ProductVariant.objects.get(id = variant_id)
+        return product_variant.price
     
-    return final_price
+    product = Product.objects.get(id = product_id)
+    return product.price
 
 def create_review(product_id, user_id, rating, comment):
     return Review.objects.create(

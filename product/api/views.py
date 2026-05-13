@@ -310,7 +310,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
                      return queryset
               return Review.objects.none()
        
-       http_method_names = ['get','post','put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive
+       http_method_names = ['get','put', 'patch', 'delete', 'head', 'options'] # only allow methods form this list . that means disabling the POST and the GET  list method not retrive
 
        def create(self, request, *args, **kwargs):
               product_id = request.data.get('product')
@@ -348,5 +348,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
               try:
                      update_reveiw_process(review_id, user_id, rating, comment)
                      return Response({"detail": "Review updated successfully"}, status=status.HTTP_200_OK)
-              except (ValueError, PermissionError) as e:
+              except ValueError as e:
                      return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+              except PermissionError as e:
+                     return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)

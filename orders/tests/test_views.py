@@ -179,7 +179,7 @@ class AdminActionAPIIntegrationTest(APITestCase):
               self.client.force_authenticate(user=self.normal_user)
 
               # 2. ACT: Try to hack the payment endpoint
-              url = f'/api/v1/orders/{self.order.order_id}/mark_as_paid/'
+              url = f'/api/v1/orders/admin/{self.order.order_id}/mark_as_paid/'
               response = self.client.patch(url)
 
               # 3. ASSERT: They must be blocked!
@@ -196,7 +196,7 @@ class AdminActionAPIIntegrationTest(APITestCase):
               self.client.force_authenticate(user=self.admin_user)
 
               # 2. ACT
-              url = f'/api/v1/orders/{self.order.order_id}/mark_as_paid/'
+              url = f'/api/v1/orders/admin/{self.order.order_id}/mark_as_paid/'
               response = self.client.patch(url)
 
               # 3. ASSERT: The Admin is allowed to bypass

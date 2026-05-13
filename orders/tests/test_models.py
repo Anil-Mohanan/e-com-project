@@ -120,7 +120,7 @@ class OrderModelTests(TestCase):
                      price_at_purchase = None
               )
 
-              self.variant.price_adjustment = Decimal('1000.00')
+              self.variant.price = Decimal('1000.00')
 
               self.variant.save()
 
@@ -128,7 +128,7 @@ class OrderModelTests(TestCase):
 
               item.refresh_from_db()
 
-              self.assertEqual(item.price_at_purchase,Decimal('1500.00'))
+              self.assertEqual(item.price_at_purchase,Decimal('1000.00'))
               
               
 
@@ -150,7 +150,7 @@ class OrderModelTests(TestCase):
                      price_at_purchase = Decimal('500.00')
               )
 
-              self.variant.price_adjustment = Decimal('1000.00')
+              self.variant.price = Decimal('1000.00')
               self.variant.save()
 
               sync_order_prices(order.order_id)
@@ -247,20 +247,20 @@ class OrderItemModelTests(TestCase):
 
               order = OrderFactory(user= self.user,shipping_address = self.shipping_address, status = "OrderConfirmed")
 
-              variant = ProductVariantFactory(product=self.product,price_adjustment = Decimal('50.00'))
+              variant = ProductVariantFactory(product=self.product,price = Decimal('50.00'))
 
               item = OrderItemFactory(
                      order = order,
                      product_id = variant.id,
                      product_name = self.product.name,
                      quantity = 1,
-                     price_at_purchase = variant.price_adjustment
+                     price_at_purchase = variant.price
               )
 
               order.refresh_from_db()
               original_total = order.total_price
 
-              variant.price_adjustment =  Decimal('999.00')
+              variant.price =  Decimal('999.00')
               variant.save()
 
               order.refresh_from_db()
