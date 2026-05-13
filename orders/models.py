@@ -1,6 +1,7 @@
+from .domain import ShippingStrategy, StandardShippingStrategy, IndianGSTStrategy
+from .domain import calculate_order_total
 from django.db import models
 from django.conf import settings
-from product.models import Product
 from decimal import Decimal
 import uuid
 from django.dispatch import receiver
@@ -61,25 +62,24 @@ class Order(models.Model):
        is_paid = models.BooleanField(default=False)
        paid_at = models.DateTimeField(auto_now_add=False , null = True, blank=True)
 
-       def calculate_total(self):#Grand tootal (Subtotal + Tax + Shipping)
-              return self.subtotal + self.tax_amount + self.shipping_fee
-
        def __str__(self):
               return f"Orders {self.order_id} - {self.user.email} ({self.status})"
+
        @property
        def subtotal(self):#price of items only
               return sum(item.total_price for item in self.items.all())
        @property
        def tax_amount(self):#tax calculation
-              return self.subtotal * Decimal('0.18')
+              strategy = IndianGSTStrategy()
+              return strategy.calculate_tax(self.subtotal)
        @property
        def shipping_fee(self):#shipping fee over 1500
-              if self.subtotal == 0: # if the cart is empty (0) , shipping is 0
-                     return 0
-              if self.subtotal > 1500:
-                     return 0
-              else: 
-                     return 100
+             strategy = StandardShippingStrategy()
+             return strategy.calculate_fee(self.subtotal)
+       
+       def calculate_total(self):
+              return calculate_order_total(self.subtotal,StandardShippingStrategy(),IndianGSTStrategy())
+
        def save(self,*args,**kwargs):
               # calling the parent to carete the row in the DB (We need an ID!)
 
@@ -94,37 +94,70 @@ class Order(models.Model):
 class OrderItemQuerySet(models.QuerySet):
        
        def top_selling(self,limit=5):
-              return self.values('product__name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
+              return self.values('product_name').annotate(total_sold = Sum('quantity')).order_by('-total_sold')[:limit]
        
-       
-
-
-
 class OrderItem(models.Model):
+    objects = OrderItemQuerySet.as_manager()   
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product_id = models.IntegerField(db_index=True)
+    variant_id = models.IntegerField(db_index=True,null=True,blank=True)
+    product_name = models.CharField(max_length=255)
     quantity = models.PositiveIntegerField(default=1)
     
     # We keep this blank allowed, because while in 'Cart', it might be empty
     price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name}"
+        return f"{self.quantity} x {self.product_name}"
 
     @property
     def total_price(self):
         # CRITICAL LOGIC FIX:
         # If the price is locked (Order is placed), use that.
         # If the price is NOT locked (Still in Cart), use the LIVE product price.
-        if self.price_at_purchase:
-            return self.price_at_purchase * self.quantity
-        return self.product.price * self.quantity 
-@receiver(post_save, sender=  OrderItem)
-@receiver(post_delete, sender=OrderItem)
-def update_order_total(sender,instance, **kwargs):
-       """
-    When an Item is added/modified/deleted, tell the Parent Order to re-save.
-    Re-saving triggers the 'save()' method above, which updates the price.
-    """
-       instance.order.save()
+       return (self.price_at_purchase or 0) * self.quantity
+
+
     
+
+class OrderEventOutbox(models.Model): # Event Box that store the Even in SQL in case the redis failed the event stits here safily
+       event_type = models.CharField(max_length = 255)
+       payload = models.JSONField(default=dict)
+       created_at = models.DateTimeField(auto_now_add=True)
+       processed = models.BooleanField(default=False,db_index= True)
+       processed_at = models.DateTimeField(null = True,blank=True)
+       error_message = models.TextField(null=True,blank=True)
+       retry_count = models.PositiveIntegerField(default=0)
+       
+
+       
+class OrderEvent(models.Model):
+
+       order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='event_log')
+
+       event_type = models.CharField(max_length = 100)
+
+       actor_id = models.IntegerField(null=True, blank=True)
+
+       actor_type = models.CharField(max_length = 20, default='user') #"user" or "system"
+
+       payload = models.JSONField(default=dict) # the full data snapshot and the moment this happend 
+
+       occured_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+       class Meta:
+              
+              ordering = ['occured_at'] # Always read events in chornological Order
+
+              indexes = [
+                     models.Index(fields = ['order', 'occured_at']) # Fast replay queries
+              ]
+
+@receiver([post_save, post_delete], sender=OrderItem)
+def update_order_total_on_item_change(sender, instance, **kwargs):
+       """
+       Signal handler that forces the parent Order to recalculate its total
+       whenever an item is added, updated, or removed.
+       """
+       if instance.order:
+              instance.order.save() # This triggers Order.save() which recalculates total

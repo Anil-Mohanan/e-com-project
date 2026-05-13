@@ -7,15 +7,27 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 
-@receiver(reset_password_token_created)#Whenever the reset_password_token_created event happens anywhere in the app, STOP everything and run the function below immediately.
-def reset_password_token_created(sender,instance, reset_password_token, *args, **kwargs):
-       token = reset_password_token.key
-       print(f"\n\n----- PASSWORD RESET TOKEN -----\n{token}\n--------------------------------\n")
+from django.conf import settings # Add this at top
 
-User = get_user_model() 
+@receiver(reset_password_token_created)
+def password_reset_token_created(sender, instance, reset_password_token, *args, **kwargs):
+       print(f"DEBUG: PASSWORD RESET SIGNAL TRIGGERED FOR {reset_password_token.user.email}")
+       from user_auth.models import AuthEventOutbox
+       
+       # We point the user to the FRONTEND Reset page
+       reset_url = f"{settings.FRONTEND_URL}/reset-password/{reset_password_token.key}" 
+       
+       AuthEventOutbox.objects.create(
+           event_type='auth.password_reset',
+           payload={
+               'email': reset_password_token.user.email,
+               'url': reset_url
+           }
+       )
+
               
               
 @receiver(post_password_reset)
-def increase_toekn_version(sender,user,*args,**kwargs):
+def increase_token_version(sender,user,*args,**kwargs):
        user.jwt_version += 1
        user.save()

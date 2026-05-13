@@ -25,3 +25,12 @@ urllib3==2.6.3
 celery
 gunicorn
 argon2-cffi
+pytest
+pytest-django
+factory-boy
+pytest-cov
+bandit
+google-auth==2.27.0
+pinecone-client
+huggingface-hub
+flake8==7.1.1

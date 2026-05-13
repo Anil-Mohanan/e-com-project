@@ -9,9 +9,6 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-from django.conf.global_settings import CSRF_COOKIE_SAMESITE
-from django.conf.global_settings import CSRF_COOKIE_HTTPONLY
-from django.conf.global_settings import SESSION_COOKIE_HTTPONLY
 import os
 from pathlib import Path
 from dotenv import load_dotenv 
@@ -32,6 +29,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG') == 'True'
+
+# line 34: DEBUG = os.environ.get('DEBUG') == 'True'
+
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost 127.0.0.1').split(' ')
 
@@ -55,11 +58,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
 
     #Apps (The Domain)
-    'user_auth',
-    'product',
-    'orders',
-    'payments',
-    'analytics'
+    'user_auth.apps.UserAuthConfig',
+    'product.apps.ProductConfig',
+    'orders.apps.OrdersConfig',
+    'payments.apps.PaymentsConfig',
+    'analytics.apps.AnalyticsConfig',
 ]
 
 MIDDLEWARE = [
@@ -68,14 +71,13 @@ MIDDLEWARE = [
     'config.middleware.ReqeustTimeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'user_auth.middleware.UpdateLastActivityMiddleware',
+    'user_auth.infrastructure.middleware.UpdateLastActivityMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'analytics.middleware.AuditLogMiddleware',
+    'analytics.infrastructure.middleware.AuditLogMiddleware',
     'config.middleware.GlobalExceptionMiddleware',
 ]
 
@@ -177,8 +179,10 @@ AUTH_USER_MODEL = 'user_auth.User'
 from datetime import timedelta
 
 REST_FRAMEWORK = {
+
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'user_auth.backends.CustomJWTAuthentication',
+        'user_auth.api.authenticate.CookieJWTAuthentication', # Use our new cookie logic
+        'rest_framework.authentication.SessionAuthentication',
     ),
     # ADD THESE LINES FOR PAGINATION AND FILTERING:
     'DEFAULT_FILTER_BACKENDS': (
@@ -227,9 +231,8 @@ SIMPLE_JWT = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-# PAYMENTS CONFIGURATION
+
 
 env = environ.Env() 
 
@@ -239,6 +242,11 @@ environ.Env.read_env(os.path.join(BASE_DIR,'.env'))
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
 STRIPE_PUBLIC_KEY = env("STRIPE_PUBLIC_KEY")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")
+
+
+PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
+
+HUGGINGFACE_API_KEY = os.environ.get('HUGGINGFACE_API_KEY')
 
 LOGGING = {
     'version': 1,
@@ -301,7 +309,7 @@ LOGGING = {
     },
 }
 AUTHENTICATION_BACKENDS = [
-    'user_auth.backends.CaseInsensitiveModelBackend', 
+    'user_auth.infrastructure.backends.CaseInsensitiveModelBackend', 
     'django.contrib.auth.backends.ModelBackend', # Fallback
 ]
 # import sys
@@ -310,6 +318,8 @@ AUTHENTICATION_BACKENDS = [
 #     REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {}
 
 # BANNED_IPS = ['127.0.0.1'] this is used to work the IP block MIDDLEWARE
+ 
+CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -332,6 +342,16 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 # Keep Celery in sync with your Django timezone
 CELERY_TIMEZONE = TIME_ZONE
+# This change the celery acknowloedgment behavior
+CELERY_TASK_ACKS_LATE = True
+
+# If a worker is killed (OOM, Docker restart), the task is explicitly rejected and returned to the queue instead of being marked as failed and discarded.
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# if a task runs more than 300 sec(5 minitutes) cerlery rasise a SoftTimeLimitExceeded excpetion inside the task. And the task can clean up and . without this a stuck task blocks the worker slot
+CELERY_TASK_SOFT_TIME_LIMIT = 300
+
+CELERY_TASK_TIME_LIMIT = 360 # the hard kill. if the a task ingore the soft limit celery force fully termenates is when it reached 360 sec (6 mint)
 
 CELERY_BEAT_SCHEDULE = {
         'precompute-dashboard-every-15-minutes': {
@@ -339,8 +359,28 @@ CELERY_BEAT_SCHEDULE = {
         'schedule': crontab(minute='*/15'),  # Runs every 15 minutes
     },
     'repair-orders-every-5-minutes': {
-        'task': 'orders.tasks.task_release_unpaid_orders',
+        'task': 'orders.infrastructure.tasks.task_release_unpaid_orders',
         'schedule': crontab(minute='*/5'),  # Runs every 5 minutes
+    },
+    'sweep-outbox-every-5-seconds':{
+        'task': 'orders.infrastructure.tasks.sweep_order_outbox',
+        'schedule': 5.0, 
+    },
+    'sweep-payment-outbox-every-5-seconds':{
+        'task': 'payments.tasks.sweeper_payment_outbox',
+        'schedule': 5.0,
+    },
+    'task-rebuild-search-index-every-10-minitus':{
+        'task' : 'product.tasks.task_rebuild_search_index',
+        'schedule' : crontab(minute='*/10')
+    },
+        'sweep-auth-outbox-every-10-seconds': {
+        'task': 'user_auth.tasks.sweep_auth_outbox',
+        'schedule': 10.0,
+    },
+    'compute-recommendation-nightly': {
+        'task': 'product.tasks.compute_recommendations',
+        'schedule':crontab(hour=2,minute = 0),
     },
 }
 SESSION_COOKIE_HTTPONLY = True
@@ -350,3 +390,10 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 # WARNING: Set these to True ONLY when you deploy to a live HTTPS server.
 # SESSION_COOKIE_SECURE = True
 # CSRF_COOKIE_SECURE = True
+
+if DEBUG:
+    EMAIL_BACKEND= 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'mailpit'
+    EMAIL_PORT = 1025
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

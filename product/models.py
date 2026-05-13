@@ -11,11 +11,12 @@ from django.core.exceptions import ValidationError
 
 class Category(models.Model):
        name = models.CharField(max_length=100)
-       slug = models.SlugField(unique=True, blank=True)# 
+       slug = models.SlugField(unique=True, blank=True,max_length=255)# 
        image = models.ImageField(upload_to='category_images/',blank=True, null= True, validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
        required_specs_keys = models.JSONField(default = list, blank= True)
        class Meta:
               verbose_name_plural = "Categories"
+              ordering = ['name']
        def save(self, *args, **kwargs):
               #Auto-generate slug if empty(eg., "Smart Phone" -> "smart-phones")
               if not self.slug:
@@ -30,7 +31,7 @@ class Product(models.Model):
        category = models.ForeignKey(Category,related_name='products',on_delete=models.CASCADE)
        name = models.CharField(max_length=200,db_index=True)
        brand = models.CharField(max_length=100, blank=True, null=True,db_index=True)
-       slug = models.SlugField(unique=True,blank=True)
+       slug = models.SlugField(unique=True,blank=True,max_length=255)
        description = models.TextField()
        price = models.DecimalField(max_digits=10, decimal_places=2)
        stock = models.PositiveIntegerField()
@@ -81,18 +82,39 @@ class ProductImages(models.Model):
               return f"Image for {self.product.name}"
 class ProductVariant(models.Model):
        product = models.ForeignKey(Product,related_name='variants', on_delete=models.CASCADE)
-       attribute_name = models.CharField(max_length=100)
-       attribute_value = models.CharField(max_length=255)
-       color = models.CharField(max_length=50, blank=True, null=True)
 
-       price_adjustment = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)#to set different price for different variant
+       sku = models.CharField(max_length = 100, unique = True, null = True, blank = True)
+
+       attribute_name = models.CharField(max_length=100)
+
+       attribute_value = models.CharField(max_length=255)
+
+       variant_name = models.CharField(
+              max_length = 255,
+              blank = True, 
+              null = True, 
+              help_text = "Optional: Use this to completely override the name (e.g 'i9-149000ks Ultra')"
+       )
+
+       description = models.TextField(
+              blank = True,
+              null = True,
+              help_text = "Optional:Technical specs or details sepcific to This Varaint"
+       )
+
+       color = models.CharField(max_length=100, blank=True, null=True)
+
+       image = models.ImageField(upload_to = 'variants/',null = True, blank = True)
+
+       price = models.DecimalField(max_digits=10, decimal_places = 2, help_text = "Total price for THIS variant")
        
        stock = models.PositiveIntegerField(default=0) # Each variant have different stock
        
        is_active = models.BooleanField(default=True)
 
+
        def __str__(self):
-              return f"{self.product.name} - {self.attribute_name}: {self.attribute_value} ({self.color})"
+              return f"{self.product.name} - {self.attribute_value} ({self.sku})"
 
 class InventoryUnit(models.Model):
 
@@ -106,7 +128,8 @@ class InventoryUnit(models.Model):
        product = models.ForeignKey(Product,related_name='inventory_units',on_delete=models.CASCADE)
        variant = models.ForeignKey(ProductVariant,related_name='inventory_units',on_delete=models.CASCADE,null=True,blank=True)
        serial_number = models.CharField(max_length=100,unique=True,db_index=True) # db_index = True make the serial_number index 
-       status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='in Stock',db_index=True)
+       status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='In Stock',db_index=True)
+       current_order_id = models.UUIDField(null = True, blank = True, db_index = True)
        date_added = models.DateTimeField(auto_now_add=True)
 
        def __str__(self):
@@ -122,8 +145,88 @@ class Review(models.Model):
 
        def __str__(self):
               return f"{self.user.first_name} - {self.product.name} ({self.rating} Stars)"
+       
+       class Meta:
+              unique_together = [['product', 'user']]
               
 
+class ProductPurchaseHistory(models.Model):
+       user_id = models.IntegerField(db_index=True)
+       product = models.ForeignKey(Product,on_delete=models.CASCADE)       
+       purchased_at = models.DateField(auto_now_add=True)
+
+       class Meta:
+              unique_together = [['user_id','product']]
 
 
+
+class ProductBehaviorLog(models.Model):
+       """Stores raw user interaction events for the behavior analytics engine.
+              user_id is IntegerField (not FK) so that Store None for not logged in users
+       """
+       EVENT_CHOICES = (
+              ('product.viewed','Product Viewed'), # User Opened a Product Detail page
+              ('product.searched','Product Searched'),# User ran a search query
+              ('product.added_to_cart','Product Added To Cart'), #User put Product in their cart
+       )
+
+       event_type = models.CharField(max_length = 50,choices = EVENT_CHOICES, db_index = True) # db_index true becuase analytics will GROUP By envet_type constantily
+
+       product_id = models.IntegerField(null = True, blank = True, db_index = True) # null_true Becasue search events have no single Product
+
+       user_id = models.IntegerField(null = True, blank = True, db_index = True)
+       #null for anonymous (not logged in) users
+
+       session_key = models.CharField(max_length = 40, null = True, blank = True)# browser session ID to track anonymous behaviro
+       
+       metadata = models.JSONField(default = dict, blank = True) # Flexible: stores search query, quantity added , etc.
+
+       created_at = models.DateTimeField(auto_now_add=True,db_index = True) # Indexed for time-range analytics (e.g, trending this week)
+
+       class Meta:
+              indexes = [
+                     # Compound index: "All views for product X in date range" - one fast query
+                     models.Index(fields=['product_id','event_type','created_at']),
+              ]
+       
+       def __str__(self):
+              return f"{self.event_type} | product = {self.product_id} | user = {self.user_id}"
+
+
+
+
+class ProductRecommendation(models.Model):
+       """
+       Pre-computed 'Customers also viewed recommendation. 
+       Written nightly Celery Beat. Read instantly by the API.
+       This table is the performance layer - instead of querying millions of 
+       behavior log rows on every request, serving one fast lookup.       
+       """
+
+       source_product = models.ForeignKey(
+              Product,
+              on_delete=models.CASCADE,
+              related_name='recommendations',
+       )# the product the user is currently viewing 
+
+       recommended_product = models.ForeignKey(
+              Product,
+              on_delete=models.CASCADE,
+              related_name = 'recommended_in',
+       )# The product suggested along side iter
+
+       score = models.FloatField(default=0.0) # the socre of how well the recommondation is
+
+       computed_at = models.DateTimeField(auto_now=True)
+
+       class Meta:
+              unique_together = [['source_product', 'recommended_product']]
+              # prevents duplicate pairs. if the task runs twice , it updates
+
+              ordering = ['-score']
+              # Higest score recommedation first.
+
+       def __str__(self):
+              return f"{self.source_product.name} -> {self.recommended_product.name} (score: {self.score})"
+              
 

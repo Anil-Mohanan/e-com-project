@@ -17,11 +17,14 @@ class CustomUserManager(BaseUserManager.from_queryset(UserQuerySet)):
               if not email:
                      raise ValueError('The Email field must be set')
               
+              email = email.strip()
+              
               if len(email) > 255:
                      raise ValueError('Eamil is too long')
               
               try:
                      validate_email(email)
+
               except ValidationError:
                      raise ValueError('The Email is invalid')
               
@@ -31,7 +34,7 @@ class CustomUserManager(BaseUserManager.from_queryset(UserQuerySet)):
               if len(password) > 128:
                      raise ValueError("Password is too long")
               
-              email = self.normalize_email(email).strip().lower()#Normalization converting anything in the email to lowecase
+              email = self.normalize_email(email).lower()#Normalization converting anything in the email to lowecase
               
               
               extra_fields.pop('is_email_verified',None)# Striping out sensitive fields from extra_fields if they exist
@@ -111,3 +114,16 @@ class UserDeviceSession(models.Model):
 
        def __str__(self):
               return f"{self.user.email} - {self.device_name}"
+
+class AuthEventOutbox(models.Model):
+       event_type = models.CharField(max_length = 255)
+       
+       payload = models.JSONField()
+       created_at = models.DateTimeField(auto_now_add=True)
+       processed = models.BooleanField(default=False,db_index=True)
+       processed_at = models.DateTimeField(null = True, blank = True)
+       error_message = models.TextField(null  = True)
+       retry_count = models.PositiveIntegerField(default=0)
+       def __str__(self):
+              return f"{self.event_type} - {self.processed}"
+       
