@@ -22,3 +22,5 @@ debug.log
 .agents/
 
 .aiexclude
+
+celerybeat-schedule
