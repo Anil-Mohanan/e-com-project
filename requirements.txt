@@ -33,3 +33,4 @@ bandit
 google-auth==2.27.0
 pinecone-client
 huggingface-hub
+flake8==7.1.1
