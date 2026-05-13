@@ -30,3 +30,9 @@ jobs:
         run: docker compose build
       - name: Run Tests
         run: docker compose run --rm web pytest
+      - name: Check Missing Migrations
+        run: docker compose run --rm web python manage.py makemigrations --check --dry-run
+      - name: Run Security Linter
+        run: docker compose run --rm web bandit -r . -ll -ii -x tests/
+      - name: Run Tests with Coverage
+        run: docker compose run --rm web pytest --cov=. --cov-report=term-missing
