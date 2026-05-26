@@ -4,6 +4,8 @@ import pytest
 from django.urls import reverse
 from rest_framework import status
 from product.tests.factories import ProductFactory,ProductPurchaseHistoryFactory,CategoryFactory,ProductVariantFactory
+from product.services.search import rebuild_search_index
+
 
 class TestPorudctListing:
        @pytest.mark.django_db
@@ -97,6 +99,9 @@ class TestPorudctListing:
               # 1. SETUP
               ProductFactory(name="Mechanical Keyboard")
               
+              #Push the new product from Postgres into the Redis cache !
+              rebuild_search_index()
+
               # The URL name for @action(detail=False) is usually 'basename-method_name'
               url = reverse('products-instant-search', kwargs={'version': 'v1'})
               

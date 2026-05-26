@@ -1,3 +1,5 @@
+from django.db.models.fields import return_None
+from enum import unique
 from django.db import models
 from django.utils.text import slugify
 from user_auth.models import User
@@ -7,13 +9,19 @@ import io
 from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 
-#Category model
+def validate_image_size(value): # Custom validator to check uploaded image file size boundaries
+       limit_mb = 2.0 # Set the size limit threshold to 2.0 Megabytes
+       limit_bytes = limit_mb * 1024 * 1024 # Convert 2MB to bytes (2.0 * 1048576 = 2097152 bytes)
+       if value.size > limit_bytes: # Check if the uploaded file's size exceeds the 2MB limit
+              raise ValidationError(f"Image size cannot exceed {limit_mb}MB.") # Raise validation error to block saving and show error in admin panel
 
+#Category model
 class Category(models.Model):
        name = models.CharField(max_length=100)
        slug = models.SlugField(unique=True, blank=True,max_length=255)# 
-       image = models.ImageField(upload_to='category_images/',blank=True, null= True, validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
+       image = models.ImageField(upload_to='category_images/',blank=True, null= True, validators=[FileExtensionValidator(['jpg','jpeg','png','webp']),validate_image_size])
        required_specs_keys = models.JSONField(default = list, blank= True)
+       metadata = models.JSONField(default = dict, blank=True, help_text = "Flexible field for UI data like video_url")
        class Meta:
               verbose_name_plural = "Categories"
               ordering = ['name']
@@ -39,6 +47,18 @@ class Product(models.Model):
        created_at = models.DateTimeField(auto_now_add=True)
        updated_at = models.DateTimeField(auto_now=True)
        specifications = models.JSONField(default=dict, blank= True)
+       base_attribute_name = models.CharField(
+              max_length = 100,
+              blank = True,
+              null = True,
+              help_text = "Optional: Name of the base confiuration(eg. ,'Ram', or 'VRAM')"
+       )
+       base_attribute_value = models.CharField(
+              max_length = 100,
+              blank = True,
+              null = True,
+              help_text = "Optional: Value of the base confiuration (e.g,'16Gb' or '128GB SSD')"
+       )
        seller = models.ForeignKey(User,on_delete=models.CASCADE,null=True,blank=True)
 
 
@@ -58,63 +78,67 @@ class Product(models.Model):
                      
        def __str__(self):
               return self.name
+
+class Color(models.Model):
+       name = models.CharField(max_length = 100, unique = True)# for human redable name
+       hex_code = models.CharField(max_length=7, default="#FFFFFF", help_text="CSS hex code for frontend swatch (e.g., #2563eb)")
+
+       def __str__(self):
+              
+              return self.name
+
+
 #Product Images (One Product -> Many Images)
 class ProductImages(models.Model):
-       product = models.ForeignKey(Product, related_name='images',on_delete=models.CASCADE)
-       image = models.ImageField(upload_to='product_images/',validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
+       product = models.ForeignKey(Product, related_name='images', on_delete=models.CASCADE)
+       variant = models.ForeignKey('ProductVariant', related_name='variant_images',on_delete=models.CASCADE,null=True, blank = True)
+       color = models.ForeignKey('Color', on_delete=models.SET_NULL, null=True, blank=True, related_name='product_images') 
+       is_primary = models.BooleanField(default=False)
+       image = models.ImageField(upload_to='product_images/', validators=[FileExtensionValidator(['jpg','jpeg','png','webp'])])
        is_thumbnail = models.BooleanField(default=False)
+       is_primary = models.BooleanField(default=False)
        MAX_IMAGE_SIZE = (800, 800)
        JPEG_QUALITY = 70# Which image show on the list page ?
-       def save(self,*args, **kwargs):
-              if self.image:
-                     img = Image.open(self.image) # Opening the Image using Pillow
-                     img = img.convert('RGB') # Converting to RGB (Crusial for JPEG/Webp compatibilty)
+       def save(self, *args, **kwargs):
+              if self.image and hasattr(self.image, 'file'):
+                     from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
+                     if isinstance(self.image.file, (InMemoryUploadedFile, TemporaryUploadedFile)):
+                            img = Image.open(self.image)
+                            img = img.convert('RGB')
+                            if img.width > 800 or img.height > 800:
+                                   img.thumbnail(self.MAX_IMAGE_SIZE)
+                            output = io.BytesIO()
+                            img.save(output, format='JPEG', quality=self.JPEG_QUALITY)
+                            output.seek(0)
+                            self.image = ContentFile(output.getvalue(), name=self.image.name)
+              super().save(*args, **kwargs)
 
-                     if img.width > 800 or img.height > 800:
-                            img.thumbnail(self.MAX_IMAGE_SIZE)
-                     output = io.BytesIO() # Save to a Memory buffer
-                     img.save(output,format='JPEG',quality = self.JPEG_QUALITY)
-                     output.seek(0)
-                     self.image = ContentFile(output.getvalue(), name=self.image.name)
-                     super().save(*args, **kwargs)
 
        def __str__(self):
               return f"Image for {self.product.name}"
+
+
 class ProductVariant(models.Model):
-       product = models.ForeignKey(Product,related_name='variants', on_delete=models.CASCADE)
+       product = models.ForeignKey(Product, related_name='variants', on_delete=models.CASCADE)
+       sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
-       sku = models.CharField(max_length = 100, unique = True, null = True, blank = True)
+       color = models.ForeignKey('Color', on_delete=models.PROTECT, null=True, blank=True)
 
-       attribute_name = models.CharField(max_length=100)
-
-       attribute_value = models.CharField(max_length=255)
-
-       variant_name = models.CharField(
-              max_length = 255,
-              blank = True, 
-              null = True, 
-              help_text = "Optional: Use this to completely override the name (e.g 'i9-149000ks Ultra')"
-       )
+       attributes = models.JSONField(default=dict, help_text="Stores varying specs like {'RAM': '16GB', 'Storage': '512GB'}")
 
        description = models.TextField(
               blank = True,
               null = True,
               help_text = "Optional:Technical specs or details sepcific to This Varaint"
        )
-
-       color = models.CharField(max_length=100, blank=True, null=True)
-
-       image = models.ImageField(upload_to = 'variants/',null = True, blank = True)
-
+       
        price = models.DecimalField(max_digits=10, decimal_places = 2, help_text = "Total price for THIS variant")
        
        stock = models.PositiveIntegerField(default=0) # Each variant have different stock
        
        is_active = models.BooleanField(default=True)
-
-
        def __str__(self):
-              return f"{self.product.name} - {self.attribute_value} ({self.sku})"
+              return f"{self.product.name} - SKU: {self.sku}"
 
 class InventoryUnit(models.Model):
 
@@ -127,6 +151,7 @@ class InventoryUnit(models.Model):
 
        product = models.ForeignKey(Product,related_name='inventory_units',on_delete=models.CASCADE)
        variant = models.ForeignKey(ProductVariant,related_name='inventory_units',on_delete=models.CASCADE,null=True,blank=True)
+       color = models.ForeignKey('Color',on_delete=models.SET_NULL,null = True, blank =True, related_name='inventory_units')
        serial_number = models.CharField(max_length=100,unique=True,db_index=True) # db_index = True make the serial_number index 
        status = models.CharField(max_length=20,choices=STATUS_CHOICES,default='In Stock',db_index=True)
        current_order_id = models.UUIDField(null = True, blank = True, db_index = True)

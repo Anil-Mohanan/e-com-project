@@ -1,6 +1,7 @@
+from dataclasses import fields
 from unicodedata import decimal
 from rest_framework import serializers
-from product.models import Category, Product, ProductImages, ProductVariant, Review
+from product.models import Category, Product, ProductImages, ProductVariant, Review, Color
 from django.core.exceptions import ValidationError
 
 class  ReviewSerializer(serializers.ModelSerializer):
@@ -15,12 +16,19 @@ class  ReviewSerializer(serializers.ModelSerializer):
                      raise serializers.ValidationError("Comments Cannot contain HTML Tags.")
               return value
 
-#1. Serializer for Images (TO handle mutlipel uploads)
 
+class ColorSerializer(serializers.ModelSerializer):
+       class Meta:
+              model = Color
+              fields = ['id','name','hex_code']
+
+
+#1. Serializer for Images (TO handle mutlipel uploads)
 class ProdcutImageSerializer(serializers.ModelSerializer):
+       color = ColorSerializer(read_only =True)
        class Meta:
               model = ProductImages
-              fields = ['id', 'image','is_thumbnail']
+              fields = ['id', 'image', 'is_thumbnail', 'is_primary', 'color', 'variant']
 # 2. Serial
 class CategorySerializer(serializers.ModelSerializer):
        # Including a list of products beloginig to this category
@@ -28,7 +36,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
        class Meta:
               model = Category
-              fields = ['id','name','slug','image','required_specs_keys','products']
+              fields = ['id','name','slug','image','required_specs_keys','metadata','products']
 
        def get_products(self, obj):
               # only active products of this Category
@@ -38,9 +46,11 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ProductVariantSerializer(serializers.ModelSerializer):
        product_slug = serializers.ReadOnlyField(source = 'product.slug')
+       color = ColorSerializer(read_only = True)
+       color_id = serializers.PrimaryKeyRelatedField(queryset = Color.objects.all(),source = 'color',write_only = True, required = False, allow_null = True)
        class Meta:
               model = ProductVariant
-              fields = ['id','product','product_slug','sku','variant_name','attribute_name','attribute_value','description','color','image','price','stock','is_active']
+              fields = ['id','product','product_slug','sku','color','color_id','attributes','description','price','stock','is_active']
               
 class ProductSerializer(serializers.ModelSerializer):
        #Read Only : Nested Serialzers for displaying full details in JSON
@@ -82,6 +92,9 @@ class ProductSerializer(serializers.ModelSerializer):
                      'average_rating',
                      'review_count',
                      'specifications',
+                     'base_attribute_name',
+                     'base_attribute_value',
+                     'created_at',
               ]
               read_only_fields = ['slug','created_at','updated_at']
               

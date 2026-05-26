@@ -191,7 +191,8 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12, # 12 is a good number (divisible by 2, 3, 4 for grid layouts)
-    # --- ADD THIS BLOCK ---
+
+    # --- DONT' FORGET TO UNCOMMENT THIS ---
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle', # For strangers (Login/Register)
         'rest_framework.throttling.UserRateThrottle', # For logged-in users
@@ -199,6 +200,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '5/minute',   # 5 requests per minute for strangers (Strict!)
         'user': '1000/day',   # 1000 requests per day for members
+        "login": "5/min",
     },
     # ... any other existing settings like DEFAULT_AUTHENTICATION_CLASSES ...
      'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
@@ -214,8 +216,13 @@ REST_FRAMEWORK = {
     
     # 4. What URL keyword argument will hold the version string? ('version' is standard)
     'VERSION_PARAM': 'version',
-
 }
+
+if DEBUG:  # Only overrides when DEBUG=True (your local machine)
+    REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = []  # Wipe the throttle class list
+    REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {}    # Wipe the rate limits
+
+
 # JWT Settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1), # Token expires in 30 mins

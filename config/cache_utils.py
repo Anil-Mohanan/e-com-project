@@ -19,7 +19,7 @@ def cache_response(key_prefix,timeout = 900, error_message = "Service temporaril
                             query_dict = dict(request.query_params.items())
                      else:
                             for key in request.query_params:
-                                   if key in allowed_params:
+                                   if key in allowed_params or key.startswith('spec_'):
                                           query_dict[key] = request.query_params.get(key)
 
                      identifier = "_".join(str(v)for v in kwargs.values())

@@ -31,20 +31,30 @@ class ProductFilter(django_filters.FilterSet):
 
        brand = django_filters.CharFilter(lookup_expr='icontains')
        
+       in_stock = django_filters.BooleanFilter(field_name='stock', method='filter_in_stock')
+
+       min_rating = django_filters.NumberFilter(field_name='average_rating',lookup_expr='gte')
+       
+       
        #Tell Django to fitler the 'category' query paramter
        category = django_filters.CharFilter(field_name='category__slug', lookup_expr='exact')
+       
+       def filter_in_stock(self,queryset,name,value):
+              if value:
+                     return queryset.filter(stock__gt = 0)
+              return queryset
 
 
        class Meta:
               model = Product
-              fields = [ 'brand', 'is_active']
+              fields = [ 'brand', 'is_active','in_stock','min_rating']
 
 class ProductViewSet(viewsets.ModelViewSet):
        """A unified Viewset for viewing and editing products.
        -cutomers can read (list/retrieve)
        -admin can write (create/update/delete)"""
       
-       queryset = Product.objects.select_related('category').prefetch_related('variants','images').annotate(average_rating = Avg('reviews__rating'),review_count = Count('reviews'))
+       queryset = Product.objects.select_related('category').prefetch_related('images','images__color','variants').annotate(average_rating = Avg('reviews__rating'),review_count = Count('reviews'))
 
        serializer_class = ProductSerializer
       
@@ -63,7 +73,7 @@ class ProductViewSet(viewsets.ModelViewSet):
        def get_queryset(self):
               search_term = self.request.query_params.get('search')
 
-              queryset = Product.objects.select_related('category').prefetch_related('variants','images').annotate(average_rating = Avg ('reviews__rating'),review_count = Count('reviews'))
+              queryset = Product.objects.select_related('category').prefetch_related('variants','images','images__color').annotate(average_rating = Avg ('reviews__rating'),review_count = Count('reviews'))
               #intercepting the query to apply PostgreSQL Full-Text Search because standard SQL LIKE queries are too slow and lack relevance ranking for e-commerce.
               if search_term: 
                      # this creates a tsvector. Write a note that Postgres will automatically tokenize the text, remove stop words, and reduce words to their lexemes (root words). Also, explain the weighting: A (highest priority) for name, down to C (lowest) for description.
@@ -78,8 +88,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                      queryset = queryset.annotate(rank = SearchRank(vector,query))
                      #filter out ranks below 0.001 to remove completely irrelevant results, and then sort descending by rank (-rank) so the most relevant products appear first.
                      queryset = queryset.filter(rank__gte = 0.001).order_by('-rank')
-              
+
+              for key, value in self.request.query_params.items():
+                     #check if the query paramter starts with defined "spec_" prefix and has a value
+                     if key.startswith('spec_') and value:
+                            #Extract the actual specifcation key name by removing the prefix
+                            spec_key = key[5:]
+                            from django.db.models import Q
+                            queryset = queryset.filter(Q(**{f"specifications__{spec_key}": value}) | Q(variants__attribute_name=spec_key, variants__attribute_value=value, variants__is_active=True)).distinct()
               return queryset
+
 
        def get_permissions(self):
 
@@ -112,8 +130,30 @@ class ProductViewSet(viewsets.ModelViewSet):
               except ValueError as e:
                      return error_response(message = str(e),status_code = 400)
 
+       @action(detail=False,methods=['get'],permission_classes = [permissions.AllowAny])
+       def top_rated(self,request,*args, **kwargs):
+              category_slug = request.query_params.get('category')
+              brand = request.query_params.get('brand')
+              limit = int(request.query_params.get('limit', 5))
+              
+              #gatting the base queryset which is already inclucde average_rating and review_count
+              queryset = self.get_queryset()
+              
+              #Filter out products that have zero reviews to only show rated products
+              queryset = queryset.filter(review_count__gt = 0)
+              
+              if category_slug:
+                     #if the frontend sends with category paramerter filter the queryset by catgory slug
+                     queryset = queryset.filter(category__slug__iexact = category_slug)
+              if brand:
+                     queryset = queryset.filter(brand__iexact = brand)
+
+              queryset = queryset.order_by('-average_rating','-review_count')[:limit]
+              serializer = self.get_serializer(queryset,many = True)
+              
+              return success_response(message="Top reated products", status_code=200, data=serializer.data)
              
-       @cache_response(key_prefix="product_list",error_message="Unable to Load Products",allowed_params=['category', 'brand', 'ordering', 'page'])
+       @cache_response(key_prefix="product_list",error_message="Unable to Load Products",allowed_params=['category', 'brand', 'ordering', 'page', 'min_price', 'max_price', 'in_stock', 'min_rating', 'search'])
        def list(self,request,*args, **kwargs):
               response = super().list(request,*args, **kwargs)
               return response
@@ -232,6 +272,120 @@ class ProductViewSet(viewsets.ModelViewSet):
                       old_value={'stock': old_stock},
                       new_value={'stock': new_instance.stock}
                   )
+       @action(detail=False, methods = ['get'],permission_classes=[permissions.AllowAny])
+       def brands(self,request,*args,**kwargs):
+              """Returns distinc brand names from the db , optionally fitlerd by category"""
+              # Read the optional category slug from the params eg : ?category = gpu
+              category_slug = request.query_params.get('category')
+              # start with all active products in the db
+              queryset = Product.objects.filter(is_active = True)
+              # narrow down to only the category
+              if category_slug:
+                     queryset = queryset.filter(category__slug__iexact = category_slug)
+                     #extract only the unique brand names
+              brand_list = (
+                     queryset.exclude(brand__isnull =True)
+                     .exclude(brand__exact = '')
+                     .values_list('brand',flat = True)
+                     .distinct()
+                     .order_by('brand')
+              )
+
+              return success_response(message="Brands fetched successfully",status_code=200,data=list(brand_list))
+
+       @action(detail= False,methods = ['get'],permission_classes = [permissions.AllowAny])
+       #define the spec_options endpoint handler function
+       def spec_options(self,request,*args,**kwargs):
+              #Retrieve the category slug query parameter from the incoming request URL
+              category_slug = request.query_params.get('category')
+              if not category_slug:
+                     #return successful response containing an empty dictionary of specifcation options
+                     return success_response(message="No categroy spccified", status_code = 200, data = {})
+              try:
+                     #fetch the single category record by slug (case insensitve)
+                     category = Category.objects.get(slug__iexact=category_slug)
+
+              except Category.DoesNotExist:
+                     return error_response(message="Category not found",status_code=404)
+              
+              #Extracting the list for required specification keys for defined on the category model(defualting to an empty list )
+              keys = category.required_specs_keys or []
+              # Initialzing an empty dictonary to hold the mapping of specificaton keys to distinct available values
+
+              def natural_sort_key(val_str):#Define local natural sorting helper function for numeric & unit values
+                     import re # regex
+
+                     s = str(val_str).strip().lower() # Clean white space and convert to lowercase for uniform Comparsion
+                     match = re.match(r'^([\d.]+)\s*([a-zA-Z\s]+)$', s) # Match stander float/int digits followed by any unit characters
+
+                     if match:
+                            try:
+                                   num = float(match.group(1))
+                                   unit = match.group(2).strip()
+
+                                   multipliers = {  # Define dictionary of multipliers to normalize capacities/speeds to standard bases
+                                           'tb': 1024 * 1024,  # Terabytes to Megabytes
+                                           'gb': 1024,  # Gigabytes to Megabytes
+                                           'mb': 1,  # Megabytes base
+                                           'kb': 1 / 1024,  # Kilobytes to Megabytes
+                                           'ghz': 1000,  # Gigahertz to Megahertz
+                                           'mhz': 1,  # Megahertz base
+                                    }  # End of multipliers dictionary
+                                   factor = 1  # Default factor if unit doesn't require scaling (e.g. W, WHr, Cores)
+
+                                   for unit_key, mult in multipliers.items(): # loop through to fin d a match
+                                          if unit_key in unit:
+                                                 factor = mult
+                                                 break
+                                   return (0, num * factor, val_str) # Return numeric sorting tuple with normalized scale
+                            except ValueError:
+                                   pass
+                     nums = re.findall(r'[\d.]+',s)  # General fallback: extract the first sequence of digits/decmial point found in the string
+                     if nums:
+                            try:
+                                   first_num = float(nums[0])# Convert first matched number to float
+                                   factor = 1 # Defalt factor for text numbers
+                                   if 'tb' in s:
+                                          factor = 1024 * 1024
+                                   elif 'gb' in s:
+                                          factor = 1024
+                                   elif 'ghz' in s:
+                                          factor = 1000
+                                   return (0, first_num * factor, val_str)
+                            
+                            except ValueError:
+                                   pass
+                     return(1,0,val_str)# Return Alphabetical sorting                                   
+              spec_options = {}
+              #filter all active products belonging to the matched category in the db
+              products = Product.objects.filter(category = category,is_active = True)
+              #Interating through each requried specification key to collect distinct values
+              for key in keys:
+                     #Query the distinct values for this JSONField specification key from the product queryset
+                     from django.db.models.fields.json import KeyTextTransform
+                     product_values = (
+                            # Execute values_list on the annotaions of the JSONField specifcation key
+                            products.annotate(val=KeyTextTransform(key, 'specifications')).values_list('val', flat=True).distinct()  # Filter out duplicates at the database level
+                     )
+                     
+                     variant_values = (
+                            ProductVariant.objects.filter(
+                                   product__category = category,
+                                   product__is_active = True,
+                                   is_active = True,
+                                   attribute_name = key
+                            ).values_list('attribute_value',flat=True).distinct()
+                     )
+                     combined_values = set(product_values) | set(variant_values)
+                     #fitler out None and empty strings, cast to a set of unique clean string vlaues, sort alphabetically
+                     cleaned_values = sorted(list({str(v).strip() for v in combined_values if v is not None and str(v).strip() != ""}),key=natural_sort_key)
+                     #Store the list of cleaned sorted values mapped to the specification key
+                     spec_options[key] = cleaned_values
+                     #Return a success Response containing the generated specification options map
+              
+              return success_response(message="Specification options fetched successfully",status_code=200,data = spec_options)
+
+              
 
 class CategoryViewSet(viewsets.ModelViewSet):
        
